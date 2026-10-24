@@ -13,6 +13,7 @@ import { DEFAULT_PORT, ensureSiteWorkspace, getPinnedCodexModel, loadConfig, sav
 import { logger } from "../utils/logger.js";
 import { checkVersions } from "../version-check.js";
 import { SkillStore, SkillStoreError } from "../skills/store.js";
+import { createMediaServeRouter, createStoreRouter } from "./store.js";
 
 /** 启动仅监听本机的 Canvas Agent HTTP 服务。 */
 export function startHttpServer() {
@@ -124,6 +125,9 @@ export function startHttpServer() {
     });
     app.get("/health", (_req, res) => res.json(session.health()));
     app.get("/config", (_req, res) => res.json({ ok: true, protocolVersion: AGENT_PROTOCOL_VERSION, url: config.url, hasToken: true }));
+    // 本地文件存储（免 token：仅本机回环监听，页面零配置即可读写磁盘工程数据）
+    app.use("/store", createStoreRouter());
+    app.use("/media", createMediaServeRouter());
     app.use((req, res, next) => {
         if (validToken(req, requestUrl(req, config), config.token)) return next();
         res.status(401).json({ ok: false, error: "invalid token" });

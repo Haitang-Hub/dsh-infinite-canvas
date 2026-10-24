@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import i18n from "@/i18n";
 import { withLocalProxy } from "@/stores/use-config-store";
 import { createImageThumbnail } from "@/lib/image-thumbnail";
+import { localStoreAvailable, mediaDelete, mediaExists, mediaGetBlob, mediaListKeys, mediaUpload, mediaUrl } from "@/services/local-store";
 
 export type UploadedImage = {
     url: string;
@@ -59,8 +60,12 @@ async function storeImage(blob: Blob, options?: ImageReadOptions): Promise<Uploa
         await store.setItem(storageKey, blob);
         throwIfAborted(options?.signal);
         objectUrls.set(storageKey, url);
+        // 磁盘优先：本地文件存储可用时同步落盘
+        if (await localStoreAvailable()) {
+            if (await mediaUpload(storageKey, blob)) objectUrls.set(storageKey, mediaUrl(storageKey));
+        }
         await storeImagePreview(storageKey, blob);
-        return { url, storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type.startsWith("image/") ? blob.type : "" };
+        return { url: objectUrls.get(storageKey) || url, storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type.startsWith("image/") ? blob.type : "" };
     } catch (error) {
         URL.revokeObjectURL(url);
         await store.removeItem(storageKey).catch(() => undefined);
@@ -144,6 +149,22 @@ export async function resolveImageUrl(storageKey?: string, fallback = "") {
     if (!storageKey) return fallback;
     const cached = objectUrls.get(storageKey);
     if (cached) return cached;
+    // 磁盘命中返回稳定 URL；磁盘缺失回退 IndexedDB 并懒迁移上盘
+    if (await localStoreAvailable()) {
+        if (await mediaExists(storageKey)) {
+            const stableUrl = mediaUrl(storageKey);
+            objectUrls.set(storageKey, stableUrl);
+            return stableUrl;
+        }
+        const blob = await store.getItem<Blob>(storageKey);
+        if (!blob) return fallback;
+        const objectUrl = URL.createObjectURL(blob);
+        objectUrls.set(storageKey, objectUrl);
+        void mediaUpload(storageKey, blob).then((ok) => {
+            if (ok) objectUrls.set(storageKey, mediaUrl(storageKey));
+        });
+        return objectUrl;
+    }
     const blob = await store.getItem<Blob>(storageKey);
     if (!blob) return fallback;
     const url = URL.createObjectURL(blob);
@@ -152,6 +173,10 @@ export async function resolveImageUrl(storageKey?: string, fallback = "") {
 }
 
 export async function getImageBlob(storageKey: string) {
+    if (await localStoreAvailable()) {
+        const remote = await mediaGetBlob(storageKey);
+        if (remote) return remote;
+    }
     return store.getItem<Blob>(storageKey);
 }
 
@@ -219,7 +244,10 @@ export async function setImageBlob(storageKey: string, blob: Blob) {
     await storeImagePreview(storageKey, blob);
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
-    return url;
+    if (await localStoreAvailable()) {
+        if (await mediaUpload(storageKey, blob)) objectUrls.set(storageKey, mediaUrl(storageKey));
+    }
+    return objectUrls.get(storageKey) || url;
 }
 
 export async function imageToDataUrl(image: { url?: string; dataUrl?: string; storageKey?: string }, options?: ImageReadOptions) {
@@ -236,6 +264,7 @@ export async function deleteStoredImages(keys: Iterable<string>) {
             objectUrls.delete(key);
             await deleteImagePreview(key);
             await store.removeItem(key);
+            await mediaDelete(key);
         }),
     );
 }
@@ -259,6 +288,11 @@ export async function cleanupUnusedImages(usedData: unknown) {
         if (!usedKeys.has(key)) orphanPreviews.push(key);
     });
     await Promise.all([deleteStoredImages(unused), ...orphanPreviews.map(deleteImagePreview)]);
+    // 磁盘侧同样清理未引用文件
+    if (await localStoreAvailable()) {
+        const diskKeys = await mediaListKeys();
+        await Promise.all(diskKeys.filter((key) => !usedKeys.has(key)).map((key) => mediaDelete(key)));
+    }
 }
 
 export function collectImageStorageKeys(value: unknown, keys = new Set<string>()) {

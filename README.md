@@ -35,6 +35,18 @@ pro-components beta 的 peer 依赖声明冲突），随后启动三个服务：
 
 打开 http://localhost:5070 ，在右上角连接 Agent（需要 agent 地址与 token）。
 
+## 本地文件存储
+
+工程数据默认落盘到项目根目录 `data/`（已 gitignore），不再受浏览器 origin 隔离与清库影响：
+
+- `data/kv/`：画布工程等结构化状态（zustand persist 混合存储，磁盘优先）
+- `data/media/`：上传/生成的图片视频等媒体文件
+
+存储服务由 canvas-agent（17371）内置的 `/store/*`、`/media/*` 端点提供，页面自动发现、
+零配置。服务不在线时自动回退浏览器 IndexedDB，且历史数据会在下次联网时**自动懒迁移**上盘
+（读取时发现磁盘缺失 → 从 IndexedDB 上传）。换端口（5070↔5075）、换浏览器、换机器拷贝
+`data/` 目录即可找回全部工程。
+
 ## 开发
 
 ```bash
