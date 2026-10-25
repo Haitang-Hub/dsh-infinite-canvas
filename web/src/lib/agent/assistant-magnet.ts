@@ -1,12 +1,10 @@
 /**
  * 磁性吸附几何计算：悬浮面板/悬浮球拖动时对屏幕四边与四角的磁吸。
  * - MAGNET_RANGE：进入该距离后坐标被"吸"到贴边位置（配合 CSS 过渡产生回弹手感）
- * - DOCK_RANGE：指针深入该距离并松手时整边停靠
  * - MARGIN：贴边留白
  */
 export const MAGNET_RANGE = 36;
 export const MAGNET_MARGIN = 8;
-export const DOCK_RANGE = 26;
 
 export type MagnetSide = "left" | "right" | "top" | "bottom";
 export type MagnetResult = { x: number; y: number; sides: MagnetSide[] };
@@ -54,12 +52,4 @@ export function magnetizeFab(rawX: number, rawY: number, size: number): { x: num
         side = "right";
     }
     return { x, y, side };
-}
-
-/** 指针位置是否落在整边停靠意图区（左右底三边）。 */
-export function dockIntentFromPointer(clientX: number, clientY: number): "left" | "right" | "bottom" | null {
-    if (clientX <= DOCK_RANGE) return "left";
-    if (window.innerWidth - clientX <= DOCK_RANGE) return "right";
-    if (window.innerHeight - clientY <= DOCK_RANGE) return "bottom";
-    return null;
 }

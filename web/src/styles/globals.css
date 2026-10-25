@@ -639,6 +639,10 @@
     background-image: linear-gradient(135deg, color-mix(in srgb, var(--ai-accent) 88%, white), color-mix(in srgb, var(--ai-accent) 94%, black));
     color: var(--ai-accent-text);
 }
+.ai-composer {
+    background: color-mix(in srgb, var(--ai-soft) 70%, transparent);
+}
+
 .ai-model-select .ant-select-selection-item {
     font-size: 12px;
 }

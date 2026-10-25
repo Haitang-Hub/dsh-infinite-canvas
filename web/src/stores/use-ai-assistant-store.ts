@@ -4,18 +4,17 @@ import type { CanvasAgentOp } from "@/lib/canvas/canvas-agent-ops";
 
 /**
  * AI 助手（悬浮对话面板）状态模型：
- * - 几何：悬浮坐标尺寸 / 各停靠厚度 / 悬浮球位置，持久化
- * - 外观：强调色 / 毛玻璃透明度 / 紧凑模式，持久化
+ * - 几何：悬浮坐标尺寸 / 悬浮球位置，持久化
+ * - 外观：毛玻璃透明度 / 紧凑模式 / 模型，持久化
  * - 会话：消息、流式与工具执行状态（内存态）
  */
 
 export type AssistantGeometry = {
-    mode: "float" | "left" | "right" | "bottom" | "minimized";
+    mode: "float" | "minimized";
     x: number;
     y: number;
     w: number;
     h: number;
-    dockThickness: number;
     /** 悬浮球位置（未拖动过时为空，按默认右下渲染）。 */
     fabX: number;
     fabY: number;
@@ -25,8 +24,6 @@ export type AssistantStyle = {
     /** 毛玻璃透明度（0-90）。 */
     glass: number;
     compact: boolean;
-    /** 输入区高度（px）。 */
-    inputHeight: number;
     /** 对话使用的文本模型；空串表示跟随全局配置。 */
     model: string;
 };
@@ -39,8 +36,8 @@ export type AssistantMessage =
 
 const GEOMETRY_KEY = "ai-assistant-geometry";
 const STYLE_KEY = "ai-assistant-style";
-const DEFAULT_GEOMETRY: AssistantGeometry = { mode: "minimized", x: 0, y: 0, w: 430, h: 580, dockThickness: 380, fabX: 0, fabY: 0 };
-const DEFAULT_STYLE: AssistantStyle = { glass: 20, compact: false, inputHeight: 76, model: "" };
+const DEFAULT_GEOMETRY: AssistantGeometry = { mode: "minimized", x: 0, y: 0, w: 430, h: 580, fabX: 0, fabY: 0 };
+const DEFAULT_STYLE: AssistantStyle = { glass: 20, compact: false, model: "" };
 
 /** 单轮对话工具执行循环上限。 */
 export const ASSISTANT_MAX_TOOL_ROUNDS = 8;
@@ -63,8 +60,9 @@ function persist(key: string, value: unknown) {
 }
 
 function loadGeometry() {
+    // 旧版本持久化里可能存在 left/right/bottom 停靠模式，统一回落为悬浮。
     return persisted(GEOMETRY_KEY, DEFAULT_GEOMETRY, (value) => {
-        if (!["float", "left", "right", "bottom", "minimized"].includes(value.mode)) value.mode = "minimized";
+        if (value.mode !== "float" && value.mode !== "minimized") value.mode = "minimized";
         return value;
     });
 }
@@ -72,7 +70,7 @@ function loadGeometry() {
 function loadStyle() {
     return persisted(STYLE_KEY, DEFAULT_STYLE, (value) => {
         value.glass = Math.min(90, Math.max(0, Number(value.glass) || 0));
-        value.inputHeight = Math.min(300, Math.max(44, Number(value.inputHeight) || DEFAULT_STYLE.inputHeight));
+        value.compact = Boolean(value.compact);
         if (typeof value.model !== "string") value.model = "";
         return value;
     });
