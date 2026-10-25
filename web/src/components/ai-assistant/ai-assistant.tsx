@@ -93,7 +93,7 @@ function AssistantHeader() {
     const geometry = useAiAssistantStore((state) => state.geometry);
     const setGeometry = useAiAssistantStore((state) => state.setGeometry);
     const minimize = useAiAssistantStore((state) => state.minimize);
-    const drag = useRef<{ startX: number; startY: number; originX: number; originY: number; originW: number; originH: number; moved: boolean; undocked: boolean } | null>(null);
+    const drag = useRef<{ startX: number; startY: number; originX: number; originY: number; moved: boolean; undocked: boolean } | null>(null);
 
     const onPointerDown = (event: React.PointerEvent) => {
         if ((event.target as HTMLElement).closest("button")) return;
@@ -102,7 +102,7 @@ function AssistantHeader() {
         const originX = rect?.x ?? geometry.x;
         const originY = rect?.y ?? geometry.y;
         // 停靠态不立即切悬浮：等真正拖动超过阈值才带当前视觉尺寸拖出，避免单击导致面板缩水。
-        drag.current = { startX: event.clientX, startY: event.clientY, originX, originY, originW: rect?.width ?? geometry.w, originH: rect?.height ?? geometry.h, moved: false, undocked: false };
+        drag.current = { startX: event.clientX, startY: event.clientY, originX, originY, moved: false, undocked: false };
         const onMove = (moveEvent: PointerEvent) => {
             const state = drag.current;
             if (!state) return;
@@ -113,17 +113,19 @@ function AssistantHeader() {
             // 仅当本次手势真的把停靠面板拖出时标记 undocked：悬浮态开始的拖动保持 false，松手才能判定停靠。
             if (!state.undocked && useAiAssistantStore.getState().geometry.mode !== "float") {
                 state.undocked = true;
-                // 拖出后保持视觉宽度，高度收敛到 85% 视口：悬浮面板可移动且不顶满全屏。
+                // 拖出后恢复悬浮尺寸（w/h 保存的是最近一次悬浮/用户调整值），高度不超过 85% 视口；
+                // 不能沿用停靠态视觉尺寸（底停靠全宽、侧停靠全高），否则悬浮后 x/y 全被夹死导致面板拖不动。
+                const g = useAiAssistantStore.getState().geometry;
                 setGeometry({
                     mode: "float",
                     x: state.originX,
                     y: state.originY,
-                    w: state.originW,
-                    h: Math.min(state.originH, Math.round(window.innerHeight * 0.85)),
+                    w: g.w,
+                    h: Math.min(g.h, Math.round(window.innerHeight * 0.85)),
                 });
             }
-            const g = useAiAssistantStore.getState().geometry;
-            const pos = clampPanel(state.originX + dx, state.originY + dy, g.w, g.h);
+            const g2 = useAiAssistantStore.getState().geometry;
+            const pos = clampPanel(state.originX + dx, state.originY + dy, g2.w, g2.h);
             setGeometry(pos);
         };
         const onUp = (upEvent: PointerEvent) => {

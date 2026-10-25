@@ -4,7 +4,7 @@
  * - dockSideFromPointer：指针深入屏幕边缘 DOCK_RANGE 内松手 → 整边停靠为侧栏（左/右全高、底全宽，完全贴合）
  * 悬浮球仍保留左右磁吸（magnetizeFab）。
  */
-export const DOCK_RANGE = 56;
+export const DOCK_RANGE = 24;
 
 export type DockSide = "left" | "right" | "bottom";
 
