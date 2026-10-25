@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { App, Button, Tooltip } from "antd";
-import { Bot, ChevronDown, CircleStop, Dock, Eraser, Maximize2, PanelLeft, PanelRight, Send } from "lucide-react";
+import { App, Button, Popover, Slider, Switch, Tooltip } from "antd";
+import { Bot, ChevronDown, CircleStop, Eraser, Grip, Maximize2, PanelLeft, PanelRight, Send, SlidersHorizontal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { requestImageQuestion } from "@/services/api/image";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useBridgeStore } from "@/stores/use-bridge-store";
-import { useBuiltinAgentStore, type AgentPanelGeometry, type BuiltinAgentMessage } from "@/stores/use-builtin-agent-store";
+import { AGENT_ACCENT_PRESETS, useBuiltinAgentStore, type AgentPanelGeometry, type BuiltinAgentMessage } from "@/stores/use-builtin-agent-store";
 import { buildSystemPrompt, MAX_TOOL_ROUNDS, parseToolCall, runBuiltinTool, toAiMessages } from "@/lib/agent/builtin-agent-tools";
 import { randomId } from "@/lib/utils";
 
@@ -21,11 +21,12 @@ const MIN_H = 360;
  * - 悬浮态：标题栏拖动、右下角 resize、自由位置
  * - 停靠态：左/右贴边全高或底部横条，内边缘可拖动调厚度
  * - 最小化：收起为可点击的悬浮球
- * 几何状态持久化到 localStorage。挂载在全局布局，全部页面可用。
+ * 外观（强调色/毛玻璃/紧凑）与几何状态均持久化。挂载在全局布局，全部页面可用。
  */
 export function BuiltinAgentPanel() {
     const { t } = useTranslation();
     const geometry = useBuiltinAgentStore((state) => state.geometry);
+    const style = useBuiltinAgentStore((state) => state.style);
     const setGeometry = useBuiltinAgentStore((state) => state.setGeometry);
     const busy = useBuiltinAgentStore((state) => state.busy);
     const openPanel = useBuiltinAgentStore((state) => state.openPanel);
@@ -35,8 +36,8 @@ export function BuiltinAgentPanel() {
         return (
             <button
                 type="button"
-                className={`fixed bottom-6 right-6 z-[95] grid size-12 place-items-center rounded-full text-white shadow-lg transition hover:scale-105 ${busy ? "animate-pulse" : ""}`}
-                style={{ background: "linear-gradient(135deg,#78716c,#44403c)" }}
+                className={`agent-accent-grad agent-fab-ring fixed bottom-6 right-6 z-[95] grid size-12 place-items-center rounded-full text-white shadow-lg transition-transform hover:scale-110 active:scale-95 ${busy ? "animate-pulse" : ""}`}
+                style={{ "--agent-accent": style.accent } as React.CSSProperties}
                 onClick={() => openPanel("float")}
                 aria-label={t("builtinAgent.open")}
                 title={t("builtinAgent.open")}
@@ -46,27 +47,34 @@ export function BuiltinAgentPanel() {
         );
     }
 
-    const style = panelStyle(geometry, dockHint);
+    const docked = geometry.mode !== "float";
+    const panelStyle = {
+        ...panelPosition(geometry, dockHint),
+        "--agent-accent": style.accent,
+        "--agent-glass": style.glass,
+        borderColor: "var(--agent-border)",
+        boxShadow: "var(--agent-shadow)",
+    } as React.CSSProperties;
 
     return (
-        <div className={`fixed z-[95] flex flex-col overflow-hidden rounded-xl border border-stone-300 bg-white shadow-2xl dark:border-stone-700 dark:bg-stone-900 ${geometry.mode === "float" ? "" : "rounded-none"}`} style={style}>
-            <PanelHeader
-                onDockHint={setDockHint}
-                dockHint={dockHint}
-            />
+        <div
+            className={`agent-panel fixed z-[95] flex flex-col overflow-hidden border ${docked ? "rounded-none" : "rounded-2xl"}`}
+            style={panelStyle}
+        >
+            <PanelHeader onDockHint={setDockHint} dockHint={dockHint} />
             <AgentChat />
             {geometry.mode === "float" ? <ResizeHandle /> : <DockEdgeHandle />}
             {dockHint ? (
-                <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-stone-950/30 text-sm font-medium text-white">
-                    {t(dockHint === "left" ? "builtinAgent.dockLeft" : dockHint === "right" ? "builtinAgent.dockRight" : "builtinAgent.dockBottom")}
+                <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-stone-950/40 text-sm font-medium text-white backdrop-blur-[2px]">
+                    <span className="rounded-full bg-stone-900/80 px-4 py-1.5">{t(dockHint === "left" ? "builtinAgent.dockLeft" : dockHint === "right" ? "builtinAgent.dockRight" : "builtinAgent.dockBottom")}</span>
                 </div>
             ) : null}
         </div>
     );
 }
 
-/** 根据模式计算面板样式；拖动中若靠近边缘则按预览停靠样式显示。 */
-function panelStyle(geometry: AgentPanelGeometry, dockHint: AgentPanelGeometry["mode"] | null): React.CSSProperties {
+/** 根据模式计算面板位置；拖动中若靠近边缘则按预览停靠位置显示。 */
+function panelPosition(geometry: AgentPanelGeometry, dockHint: AgentPanelGeometry["mode"] | null): React.CSSProperties {
     const mode = dockHint || geometry.mode;
     if (mode === "left") return { top: 0, bottom: 0, left: 0, width: geometry.dockThickness };
     if (mode === "right") return { top: 0, bottom: 0, right: 0, width: geometry.dockThickness };
@@ -74,7 +82,7 @@ function panelStyle(geometry: AgentPanelGeometry, dockHint: AgentPanelGeometry["
     return { left: geometry.x, top: geometry.y, width: geometry.w, height: geometry.h };
 }
 
-/** 标题栏：拖动（含边缘停靠判定）+ 模式切换 + 最小化/关闭。 */
+/** 标题栏：头像 + 拖动（含边缘停靠判定）+ 外观设置 + 模式切换 + 最小化。 */
 function PanelHeader({ onDockHint, dockHint }: { onDockHint: (mode: AgentPanelGeometry["mode"] | null) => void; dockHint: AgentPanelGeometry["mode"] | null }) {
     const { t } = useTranslation();
     const geometry = useBuiltinAgentStore((state) => state.geometry);
@@ -106,32 +114,97 @@ function PanelHeader({ onDockHint, dockHint }: { onDockHint: (mode: AgentPanelGe
         onDockHint(null);
     };
 
+    const iconButton = "grid size-7 place-items-center rounded-md text-stone-500 transition hover:bg-stone-500/10 hover:text-stone-700 dark:hover:text-stone-200";
+
     return (
         <div
-            className="flex h-10 shrink-0 cursor-grab select-none items-center gap-2 border-b border-stone-200 bg-stone-100 px-3 active:cursor-grabbing dark:border-stone-700 dark:bg-stone-800"
+            className="flex h-11 shrink-0 cursor-grab select-none items-center gap-2 border-b px-3 active:cursor-grabbing"
+            style={{ borderColor: "var(--agent-border)" }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerUp}
             onDoubleClick={() => setGeometry({ mode: geometry.mode === "float" ? "right" : "float" })}
         >
-            <Bot className="size-4 shrink-0 text-stone-500" />
-            <span className="min-w-0 flex-1 truncate text-sm font-medium">{t("builtinAgent.title")}</span>
-            <Tooltip title={t("builtinAgent.dockLeft")}>
-                <Button type="text" size="small" className="!size-7 !min-w-7 !p-0" icon={<PanelLeft className="size-3.5" />} onClick={() => setGeometry({ mode: "left" })} aria-label={t("builtinAgent.dockLeft")} />
-            </Tooltip>
-            <Tooltip title={t("builtinAgent.dockRight")}>
-                <Button type="text" size="small" className="!size-7 !min-w-7 !p-0" icon={<PanelRight className="size-3.5" />} onClick={() => setGeometry({ mode: "right" })} aria-label={t("builtinAgent.dockRight")} />
-            </Tooltip>
-            <Tooltip title={t("builtinAgent.dockBottom")}>
-                <Button type="text" size="small" className="!size-7 !min-w-7 !p-0" icon={<ChevronDown className="size-3.5" />} onClick={() => setGeometry({ mode: "bottom" })} aria-label={t("builtinAgent.dockBottom")} />
-            </Tooltip>
-            <Tooltip title={t("builtinAgent.float")}>
-                <Button type="text" size="small" className="!size-7 !min-w-7 !p-0" icon={<Maximize2 className="size-3.5" />} onClick={() => setGeometry({ mode: "float" })} aria-label={t("builtinAgent.float")} />
-            </Tooltip>
+            <span className="agent-accent-grad grid size-6 shrink-0 place-items-center rounded-lg text-white shadow-sm">
+                <Bot className="size-3.5" />
+            </span>
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold">{t("builtinAgent.title")}</span>
+            <Grip className="size-3.5 shrink-0 text-stone-400/70" />
+            <Popover trigger="click" placement="bottomRight" arrow={false} overlayStyle={{ minWidth: 264 }} content={<div className="p-3"><StyleSettings /></div>}>
+                <Tooltip title={t("builtinAgent.styleSettings")}>
+                    <button type="button" className={iconButton} aria-label={t("builtinAgent.styleSettings")}>
+                        <SlidersHorizontal className="size-3.5" />
+                    </button>
+                </Tooltip>
+            </Popover>
+            {geometry.mode !== "left" ? (
+                <Tooltip title={t("builtinAgent.dockLeft")}>
+                    <button type="button" className={iconButton} aria-label={t("builtinAgent.dockLeft")} onClick={() => setGeometry({ mode: "left" })}>
+                        <PanelLeft className="size-3.5" />
+                    </button>
+                </Tooltip>
+            ) : null}
+            {geometry.mode !== "right" ? (
+                <Tooltip title={t("builtinAgent.dockRight")}>
+                    <button type="button" className={iconButton} aria-label={t("builtinAgent.dockRight")} onClick={() => setGeometry({ mode: "right" })}>
+                        <PanelRight className="size-3.5" />
+                    </button>
+                </Tooltip>
+            ) : null}
+            {geometry.mode !== "bottom" ? (
+                <Tooltip title={t("builtinAgent.dockBottom")}>
+                    <button type="button" className={iconButton} aria-label={t("builtinAgent.dockBottom")} onClick={() => setGeometry({ mode: "bottom" })}>
+                        <ChevronDown className="size-3.5" />
+                    </button>
+                </Tooltip>
+            ) : null}
+            {geometry.mode !== "float" ? (
+                <Tooltip title={t("builtinAgent.float")}>
+                    <button type="button" className={iconButton} aria-label={t("builtinAgent.float")} onClick={() => setGeometry({ mode: "float" })}>
+                        <Maximize2 className="size-3.5" />
+                    </button>
+                </Tooltip>
+            ) : null}
             <Tooltip title={t("builtinAgent.minimize")}>
-                <Button type="text" size="small" className="!size-7 !min-w-7 !p-0" icon={<Dock className="size-3.5 rotate-180" />} onClick={minimize} aria-label={t("builtinAgent.minimize")} />
+                <button type="button" className={iconButton} aria-label={t("builtinAgent.minimize")} onClick={minimize}>
+                    <ChevronDown className="size-3.5 rotate-180" />
+                </button>
             </Tooltip>
+        </div>
+    );
+}
+
+/** 外观设置：强调色 / 毛玻璃透明度 / 紧凑模式。 */
+function StyleSettings() {
+    const { t } = useTranslation();
+    const style = useBuiltinAgentStore((state) => state.style);
+    const setStyle = useBuiltinAgentStore((state) => state.setStyle);
+    return (
+        <div className="space-y-4 text-xs">
+            <div>
+                <div className="mb-2 font-medium text-stone-600 dark:text-stone-300">{t("builtinAgent.accentColor")}</div>
+                <div className="flex gap-2">
+                    {AGENT_ACCENT_PRESETS.map((color) => (
+                        <button
+                            key={color}
+                            type="button"
+                            className={`size-6 rounded-full transition-transform hover:scale-110 ${style.accent === color ? "ring-2 ring-offset-2 ring-stone-400 dark:ring-offset-stone-900" : ""}`}
+                            style={{ background: color }}
+                            aria-label={color}
+                            onClick={() => setStyle({ accent: color })}
+                        />
+                    ))}
+                </div>
+            </div>
+            <div>
+                <div className="mb-1 font-medium text-stone-600 dark:text-stone-300">{t("builtinAgent.glass")}</div>
+                <Slider min={0} max={90} value={style.glass} onChange={(value) => setStyle({ glass: value as number })} tooltip={{ formatter: (value) => `${value}%` }} className="!my-1" />
+            </div>
+            <div className="flex items-center justify-between">
+                <span className="font-medium text-stone-600 dark:text-stone-300">{t("builtinAgent.compact")}</span>
+                <Switch size="small" checked={style.compact} onChange={(checked) => setStyle({ compact: checked })} />
+            </div>
         </div>
     );
 }
@@ -180,7 +253,7 @@ function DockEdgeHandle() {
                 if (start === null) return;
                 const delta = (horizontal ? event.clientY : event.clientX) - start;
                 const max = horizontal ? window.innerHeight - 200 : Math.min(window.innerWidth - 320, 640);
-                const size = clamp((horizontal ? geometry.dockThickness + delta - (onLeft ? 0 : 0) : onLeft ? geometry.dockThickness + delta : geometry.dockThickness - delta), 280, max);
+                const size = clamp(horizontal ? geometry.dockThickness + delta : onLeft ? geometry.dockThickness + delta : geometry.dockThickness - delta, 280, max);
                 setGeometry({ dockThickness: size });
                 drag.current = horizontal ? event.clientY : event.clientX;
             }}
@@ -195,6 +268,8 @@ function AgentChat() {
     const { t } = useTranslation();
     const navigate = useNavigate();
     const { message: toast } = App.useApp();
+    const compact = useBuiltinAgentStore((state) => state.style.compact);
+    const accent = useBuiltinAgentStore((state) => state.style.accent);
     const messages = useBuiltinAgentStore((state) => state.messages);
     const streaming = useBuiltinAgentStore((state) => state.streaming);
     const addMessage = useBuiltinAgentStore((state) => state.addMessage);
@@ -211,9 +286,8 @@ function AgentChat() {
     }, [messages]);
 
     const toolContext = useMemo(() => {
-        const { canvasContext } = useBridgeStore.getState();
         return {
-            canvasSnapshot: canvasContext?.snapshot || null,
+            canvasSnapshot: useBridgeStore.getState().canvasContext?.snapshot || null,
             applyOps: (ops: unknown[]) => {
                 const context = useBridgeStore.getState().canvasContext;
                 if (!context) throw new Error(t("builtinAgent.noCanvas"));
@@ -277,16 +351,17 @@ function AgentChat() {
 
     return (
         <>
-            <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3">
+            <div ref={listRef} className={`min-h-0 flex-1 space-y-3 overflow-y-auto px-3 ${compact ? "py-2" : "py-3"}`}>
                 {messages.length === 0 ? <EmptyHint /> : null}
                 {messages.map((item) => (
                     <MessageBubble key={item.id} message={item} />
                 ))}
             </div>
-            <div className="flex shrink-0 items-end gap-2 border-t border-stone-200 p-2 dark:border-stone-700">
-                <Button type="text" size="small" className="!size-8 !min-w-8 !p-0" icon={<Eraser className="size-4" />} onClick={clearMessages} disabled={!messages.length || streaming} aria-label={t("builtinAgent.clear")} title={t("builtinAgent.clear")} />
+            <div className="flex shrink-0 items-end gap-2 border-t p-2" style={{ borderColor: "var(--agent-border)" }}>
+                <Button type="text" size="small" className="!size-8 !min-w-8 !p-0 text-stone-400" icon={<Eraser className="size-4" />} onClick={clearMessages} disabled={!messages.length || streaming} aria-label={t("builtinAgent.clear")} title={t("builtinAgent.clear")} />
                 <textarea
-                    className="max-h-32 min-h-9 flex-1 resize-none rounded-lg border border-stone-300 bg-transparent px-2.5 py-1.5 text-sm outline-none focus:border-stone-400 dark:border-stone-600"
+                    className="max-h-32 min-h-9 flex-1 resize-none rounded-xl border bg-transparent px-3 py-2 text-sm outline-none transition focus:border-stone-400/60"
+                    style={{ borderColor: "var(--agent-border)" }}
                     rows={1}
                     value={draft}
                     placeholder={t("builtinAgent.placeholder")}
@@ -299,9 +374,19 @@ function AgentChat() {
                     }}
                 />
                 {streaming ? (
-                    <Button type="primary" danger size="small" className="!h-8 !w-9 !min-w-9 !p-0" icon={<CircleStop className="size-4" />} onClick={stop} aria-label={t("builtinAgent.stop")} title={t("builtinAgent.stop")} />
+                    <Button type="primary" danger size="small" className="!h-9 !w-9 !min-w-9 !rounded-xl !p-0" icon={<CircleStop className="size-4" />} onClick={stop} aria-label={t("builtinAgent.stop")} title={t("builtinAgent.stop")} />
                 ) : (
-                    <Button type="primary" size="small" className="!h-8 !w-9 !min-w-9 !p-0" icon={<Send className="size-4" />} onClick={() => void send()} disabled={!draft.trim()} aria-label={t("builtinAgent.send")} title={t("builtinAgent.send")} />
+                    <button
+                        type="button"
+                        className="agent-accent-grad grid size-9 shrink-0 place-items-center rounded-xl text-white shadow-sm transition hover:brightness-110 active:scale-95 disabled:opacity-40"
+                        style={{ "--agent-accent": accent } as React.CSSProperties}
+                        disabled={!draft.trim()}
+                        onClick={() => void send()}
+                        aria-label={t("builtinAgent.send")}
+                        title={t("builtinAgent.send")}
+                    >
+                        <Send className="size-4" />
+                    </button>
                 )}
             </div>
         </>
@@ -312,8 +397,10 @@ function EmptyHint() {
     const { t } = useTranslation();
     return (
         <div className="grid h-full place-items-center px-6 text-center text-xs text-stone-400">
-            <div className="space-y-1">
-                <Bot className="mx-auto size-8 opacity-40" />
+            <div className="space-y-2">
+                <span className="agent-accent-grad mx-auto grid size-10 place-items-center rounded-2xl text-white shadow">
+                    <Bot className="size-5" />
+                </span>
                 <p>{t("builtinAgent.emptyHint")}</p>
             </div>
         </div>
@@ -322,30 +409,43 @@ function EmptyHint() {
 
 function MessageBubble({ message }: { message: BuiltinAgentMessage }) {
     const { t } = useTranslation();
+    const compact = useBuiltinAgentStore((state) => state.style.compact);
+    const accent = useBuiltinAgentStore((state) => state.style.accent);
+    const bubble = compact ? "px-2.5 py-1.5 text-xs" : "px-3.5 py-2.5 text-sm";
+
     if (message.role === "tool") {
         return (
-            <div className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-xs dark:border-stone-700 dark:bg-stone-800/60">
+            <div className={`agent-panel-soft agent-tool-stripe rounded-xl py-2 pl-3 pr-3 ${compact ? "text-[11px]" : "text-xs"}`} style={{ "--agent-accent": accent } as React.CSSProperties}>
                 <div className="mb-1 flex items-center gap-1.5 font-medium text-stone-600 dark:text-stone-300">
-                    <span className="size-1.5 rounded-full bg-emerald-500" />
-                    {message.tool}
-                    {message.error ? <span className="text-red-500">{t("builtinAgent.toolFailed")}</span> : message.result !== undefined ? <span className="text-emerald-600">{t("builtinAgent.toolDone")}</span> : <span className="animate-pulse">{t("builtinAgent.toolRunning")}</span>}
+                    <span className={`size-1.5 rounded-full ${message.error ? "bg-red-500" : message.result !== undefined ? "bg-emerald-500" : "animate-pulse"}`} style={message.error || message.result !== undefined ? undefined : { background: accent }} />
+                    <span className="font-mono">{message.tool}</span>
+                    {message.error ? <span className="text-red-500">{t("builtinAgent.toolFailed")}</span> : message.result !== undefined ? <span className="text-emerald-600 dark:text-emerald-400">{t("builtinAgent.toolDone")}</span> : <span className="animate-pulse">{t("builtinAgent.toolRunning")}</span>}
                 </div>
-                <pre className="max-h-24 overflow-y-auto whitespace-pre-wrap break-all text-stone-500 dark:text-stone-400">{JSON.stringify(message.error ?? message.result ?? message.input, null, 2)}</pre>
+                <pre className="max-h-24 overflow-y-auto whitespace-pre-wrap break-all font-mono text-stone-500 dark:text-stone-400">{JSON.stringify(message.error ?? message.result ?? message.input, null, 2)}</pre>
             </div>
         );
     }
-    if (message.role === "error") return <div className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/40 dark:text-red-400">{message.text}</div>;
+    if (message.role === "error") return <div className="rounded-xl bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-400">{message.text}</div>;
     if (message.role === "user") {
         return (
             <div className="flex justify-end">
-                <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-stone-800 px-3 py-2 text-sm text-white dark:bg-stone-700">{message.text}</div>
+                <div className={`agent-msg-user max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md text-white shadow-sm ${bubble}`}>{message.text}</div>
             </div>
         );
     }
     return (
-        <div className="flex justify-start">
-            <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-bl-sm bg-stone-100 px-3 py-2 text-sm dark:bg-stone-800">
-                {message.text || <span className="inline-flex gap-1 py-1">{[0, 1, 2].map((index) => <span key={index} className="size-1.5 animate-bounce rounded-full bg-stone-400" style={{ animationDelay: `${index * 120}ms` }} />)}</span>}
+        <div className="flex justify-start gap-2">
+            <span className="agent-accent-grad mt-1 grid size-6 shrink-0 place-items-center rounded-lg text-white shadow-sm" style={{ "--agent-accent": accent } as React.CSSProperties}>
+                <Bot className="size-3.5" />
+            </span>
+            <div className={`agent-panel-soft max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-bl-md shadow-sm ${bubble}`}>
+                {message.text || (
+                    <span className="inline-flex items-center gap-1 py-1">
+                        {[0, 1, 2].map((index) => (
+                            <span key={index} className="size-1.5 animate-bounce rounded-full" style={{ background: accent, animationDelay: `${index * 120}ms` }} />
+                        ))}
+                    </span>
+                )}
             </div>
         </div>
     );

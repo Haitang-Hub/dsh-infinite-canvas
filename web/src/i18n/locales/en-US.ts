@@ -335,6 +335,10 @@ export default {
         config: "Settings",
     },
     builtinAgent: {
+        styleSettings: "Panel style",
+        accentColor: "Accent color",
+        glass: "Glass transparency",
+        compact: "Compact mode",
         title: "Built-in Agent",
         open: "Open built-in Agent",
         minimize: "Minimize to floating ball",

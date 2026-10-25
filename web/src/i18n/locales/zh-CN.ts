@@ -335,6 +335,10 @@ export default {
         config: "配置",
     },
     builtinAgent: {
+        styleSettings: "面板外观",
+        accentColor: "强调色",
+        glass: "毛玻璃透明度",
+        compact: "紧凑模式",
         title: "内置 Agent",
         open: "打开内置 Agent",
         minimize: "最小化为悬浮球",

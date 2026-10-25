@@ -18,6 +18,17 @@ export type BuiltinAgentMessage =
     | { id: string; role: "tool"; tool: string; input: unknown; result?: unknown; error?: string; round: number }
     | { id: string; role: "error"; text: string };
 
+/** 面板外观偏好：强调色 / 毛玻璃透明度 / 紧凑模式，独立持久化。 */
+export type AgentPanelStyle = {
+    accent: string;
+    glass: number;
+    compact: boolean;
+};
+
+const STYLE_KEY = "builtin-agent-style";
+const DEFAULT_STYLE: AgentPanelStyle = { accent: "#6366f1", glass: 25, compact: false };
+const ACCENT_PRESETS = ["#6366f1", "#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ec4899", "#78716c"];
+
 const STORAGE_KEY = "builtin-agent-panel";
 const DEFAULT_GEOMETRY: AgentPanelGeometry = { mode: "minimized", x: 0, y: 0, w: 420, h: 560, dockThickness: 360 };
 /** 单轮对话中工具执行循环上限，防止模型失控连续调用。 */
@@ -37,6 +48,29 @@ function loadGeometry(): AgentPanelGeometry {
     }
 }
 
+function loadStyle(): AgentPanelStyle {
+    try {
+        const raw = localStorage.getItem(STYLE_KEY);
+        if (!raw) return { ...DEFAULT_STYLE };
+        const value = { ...DEFAULT_STYLE, ...(JSON.parse(raw) as Partial<AgentPanelStyle>) };
+        if (!ACCENT_PRESETS.includes(value.accent)) value.accent = DEFAULT_STYLE.accent;
+        value.glass = Math.min(90, Math.max(0, Number(value.glass) || 0));
+        return value;
+    } catch {
+        return { ...DEFAULT_STYLE };
+    }
+}
+
+function saveStyle(style: AgentPanelStyle) {
+    try {
+        localStorage.setItem(STYLE_KEY, JSON.stringify(style));
+    } catch {
+        // 忽略写入失败。
+    }
+}
+
+export const AGENT_ACCENT_PRESETS = ACCENT_PRESETS;
+
 function saveGeometry(geometry: AgentPanelGeometry) {
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(geometry));
@@ -47,6 +81,8 @@ function saveGeometry(geometry: AgentPanelGeometry) {
 
 export type BuiltinAgentStore = {
     geometry: AgentPanelGeometry;
+    style: AgentPanelStyle;
+    setStyle: (patch: Partial<AgentPanelStyle>) => void;
     messages: BuiltinAgentMessage[];
     streaming: boolean;
     /** 正在执行工具调用（用于悬浮球/面板状态指示）。 */
@@ -63,6 +99,12 @@ export type BuiltinAgentStore = {
 
 export const useBuiltinAgentStore = create<BuiltinAgentStore>((set, get) => ({
     geometry: loadGeometry(),
+    style: loadStyle(),
+    setStyle: (patch) => {
+        const style = { ...get().style, ...patch };
+        saveStyle(style);
+        set({ style });
+    },
     messages: [],
     streaming: false,
     busy: false,
