@@ -337,6 +337,9 @@ export default {
     aiAssistant: {
         title: "AI Assistant",
         open: "Open AI Assistant",
+        dockLeft: "Dock left",
+        dockRight: "Dock right",
+        dockBottom: "Dock bottom",
         minimize: "Minimize to floating ball",
         styleSettings: "Assistant style",
         glass: "Glass transparency",

@@ -11,7 +11,7 @@ import { useThemeStore } from "@/stores/use-theme-store";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useAiAssistantStore, type AssistantMessage } from "@/stores/use-ai-assistant-store";
 import { ASSISTANT_TOOL_ROUND_LIMIT, buildAssistantSystemPrompt, parseAssistantToolCall, runAssistantTool, toAssistantAiMessages } from "@/lib/agent/ai-assistant-engine";
-import { clampPanel, dockSideFromPointer, magnetizeFab } from "@/lib/agent/assistant-magnet";
+import { clampPanel, dockSideFromPanel, magnetizeFab, type DockSide } from "@/lib/agent/assistant-magnet";
 import { randomId } from "@/lib/utils";
 
 const MIN_W = 320;
@@ -46,6 +46,7 @@ function AssistantWindow({ children }: { children: React.ReactNode }) {
     const theme = canvasThemes[dark ? "dark" : "light"];
     const geometry = useAiAssistantStore((state) => state.geometry);
     const style = useAiAssistantStore((state) => state.style);
+    const dockHint = useAiAssistantStore((state) => state.dockHint);
     const docked = geometry.mode !== "float";
 
     const position: React.CSSProperties = geometry.mode === "left"
@@ -68,6 +69,20 @@ function AssistantWindow({ children }: { children: React.ReactNode }) {
         >
             {children}
             {docked ? <DockEdge mode={geometry.mode as "left" | "right" | "bottom"} /> : <ResizeCorner />}
+            <DockHintOverlay hint={dockHint} />
+        </div>
+    );
+}
+
+/** 拖动中面板贴边的停靠预览遮罩。 */
+function DockHintOverlay({ hint }: { hint: "left" | "right" | "bottom" | null }) {
+    const { t } = useTranslation();
+    if (!hint) return null;
+    return (
+        <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-stone-950/45 backdrop-blur-[2px]">
+            <span className="rounded-full bg-stone-900/85 px-4 py-1.5 text-sm font-medium text-white shadow-lg">
+                {t(hint === "left" ? "aiAssistant.dockLeft" : hint === "right" ? "aiAssistant.dockRight" : "aiAssistant.dockBottom")}
+            </span>
         </div>
     );
 }
@@ -87,13 +102,14 @@ function themeVars(theme: (typeof canvasThemes)[keyof typeof canvasThemes], dark
     } as React.CSSProperties;
 }
 
-/** 标题栏：拖动（自由移动）+ 拖出后松手指针入边整边停靠 + 唯一的关闭（最小化为悬浮球）按钮。 */
+/** 标题栏：拖动（自由移动）+ 面板贴边显示停靠预览、松手停靠 + 唯一的关闭（最小化为悬浮球）按钮。 */
 function AssistantHeader() {
     const { t } = useTranslation();
     const geometry = useAiAssistantStore((state) => state.geometry);
     const setGeometry = useAiAssistantStore((state) => state.setGeometry);
+    const setDockHint = useAiAssistantStore((state) => state.setDockHint);
     const minimize = useAiAssistantStore((state) => state.minimize);
-    const drag = useRef<{ startX: number; startY: number; originX: number; originY: number; moved: boolean; undockSide: "left" | "right" | "bottom" | null } | null>(null);
+    const drag = useRef<{ startX: number; startY: number; originX: number; originY: number; moved: boolean; undockSide: DockSide | null; hint: DockSide | null } | null>(null);
 
     const onPointerDown = (event: React.PointerEvent) => {
         if ((event.target as HTMLElement).closest("button")) return;
@@ -101,8 +117,8 @@ function AssistantHeader() {
         const rect = panel?.getBoundingClientRect();
         const originX = rect?.x ?? geometry.x;
         const originY = rect?.y ?? geometry.y;
-        // 停靠态不立即切悬浮：等真正拖动超过阈值才带当前视觉尺寸拖出，避免单击导致面板缩水。
-        drag.current = { startX: event.clientX, startY: event.clientY, originX, originY, moved: false, undockSide: null };
+        // 停靠态不立即切悬浮：等真正拖动超过阈值才带悬浮尺寸拖出，避免单击导致面板缩水。
+        drag.current = { startX: event.clientX, startY: event.clientY, originX, originY, moved: false, undockSide: null, hint: null };
         const onMove = (moveEvent: PointerEvent) => {
             const state = drag.current;
             if (!state) return;
@@ -110,9 +126,9 @@ function AssistantHeader() {
             const dy = moveEvent.clientY - state.startY;
             if (!state.moved && Math.abs(dx) + Math.abs(dy) <= 4) return;
             state.moved = true;
-            // 记录本次手势拖出的停靠侧：同侧松手不回吸（沿边拖动），拖到别的边仍可停靠。
+            // 记录本次手势拖出的停靠侧：该侧本次松手不再回吸，拖到别的边仍可停靠。
             if (!state.undockSide && useAiAssistantStore.getState().geometry.mode !== "float") {
-                state.undockSide = useAiAssistantStore.getState().geometry.mode as "left" | "right" | "bottom";
+                state.undockSide = useAiAssistantStore.getState().geometry.mode as DockSide;
                 // 拖出后恢复悬浮尺寸（w/h 保存的是最近一次悬浮/用户调整值），高度不超过 85% 视口；
                 // 不能沿用停靠态视觉尺寸（底停靠全宽、侧停靠全高），否则悬浮后 x/y 全被夹死导致面板拖不动。
                 const g = useAiAssistantStore.getState().geometry;
@@ -127,19 +143,21 @@ function AssistantHeader() {
             const g2 = useAiAssistantStore.getState().geometry;
             const pos = clampPanel(state.originX + dx, state.originY + dy, g2.w, g2.h);
             setGeometry(pos);
+            // 停靠预览按面板自身位置判定：面板贴到某边即显示预览（光标无需触及屏幕边缘）。
+            const hint = dockSideFromPanel(pos.x, pos.y, g2.w, g2.h, state.undockSide);
+            state.hint = hint;
+            setDockHint(hint);
         };
-        const onUp = (upEvent: PointerEvent) => {
+        const onUp = () => {
             const state = drag.current;
             drag.current = null;
-            // 松手停靠判定：跳过本次拖出的一侧（沿边拖动不回吸），其余边（含从悬浮开始的所有边）正常停靠。
-            if (state?.moved) {
-                const side = dockSideFromPointer(upEvent.clientX, upEvent.clientY);
+            // 松手时面板正贴着某边（预览中）→ 停靠到该边。
+            if (state?.moved && state.hint) {
                 const currentH = useAiAssistantStore.getState().geometry.h;
-                if (side && side !== state.undockSide) {
-                    if (side === "bottom") setGeometry({ mode: "bottom", h: Math.min(currentH, 420) });
-                    else setGeometry({ mode: side });
-                }
+                if (state.hint === "bottom") setGeometry({ mode: "bottom", h: Math.min(currentH, 420) });
+                else setGeometry({ mode: state.hint });
             }
+            setDockHint(null);
             window.removeEventListener("pointermove", onMove);
             window.removeEventListener("pointerup", onUp);
         };

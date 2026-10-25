@@ -337,6 +337,9 @@ export default {
     aiAssistant: {
         title: "AI 助手",
         open: "打开 AI 助手",
+        dockLeft: "停靠左侧",
+        dockRight: "停靠右侧",
+        dockBottom: "停靠底部",
         minimize: "最小化为悬浮球",
         styleSettings: "助手外观",
         glass: "毛玻璃透明度",

@@ -1,10 +1,11 @@
 /**
  * 面板拖动几何计算：
  * - clampPanel：拖动中限制在视口内（自由移动，无吸附）
- * - dockSideFromPointer：指针深入屏幕边缘 DOCK_RANGE 内松手 → 整边停靠为侧栏（左/右全高、底全宽，完全贴合）
+ * - dockSideFromPanel：面板自身贴近某边（≤ PANEL_DOCK_RANGE）→ 整边停靠意图（显示预览，松手停靠）。
+ *   按面板而非光标判定：光标抓在标题栏上，够不到屏幕边缘也能停靠。
  * 悬浮球仍保留左右磁吸（magnetizeFab）。
  */
-export const DOCK_RANGE = 24;
+export const PANEL_DOCK_RANGE = 24;
 
 export type DockSide = "left" | "right" | "bottom";
 
@@ -20,12 +21,21 @@ export function clampPanel(rawX: number, rawY: number, w: number, h: number): { 
     };
 }
 
-/** 松手时指针所在的停靠意图区：左/右/底，深入 56px 内判定。 */
-export function dockSideFromPointer(clientX: number, clientY: number): DockSide | null {
-    if (clientX <= DOCK_RANGE) return "left";
-    if (window.innerWidth - clientX <= DOCK_RANGE) return "right";
-    if (window.innerHeight - clientY <= DOCK_RANGE) return "bottom";
-    return null;
+/** 面板贴边停靠意图：取面板最贴近且在感应范围内的边；skipSide 为本次手势拖出的一侧，不参与判定。 */
+export function dockSideFromPanel(x: number, y: number, w: number, h: number, skip: DockSide | null): DockSide | null {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const candidates: Array<[DockSide, number]> = [];
+    const distBottom = vh - (y + h);
+    if (distBottom <= PANEL_DOCK_RANGE) candidates.push(["bottom", distBottom]);
+    const distLeft = x;
+    if (distLeft <= PANEL_DOCK_RANGE) candidates.push(["left", distLeft]);
+    const distRight = vw - (x + w);
+    if (distRight <= PANEL_DOCK_RANGE) candidates.push(["right", distRight]);
+    const eligible = candidates.filter(([side]) => side !== skip);
+    if (!eligible.length) return null;
+    eligible.sort((a, b) => a[1] - b[1]);
+    return eligible[0][0];
 }
 
 /** 悬浮球的磁吸：只在左右两侧吸附并保持垂直自由。 */

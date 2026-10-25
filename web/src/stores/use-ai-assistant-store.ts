@@ -98,7 +98,10 @@ export type AiAssistantStore = {
     messages: AssistantMessage[];
     streaming: boolean;
     busy: boolean;
+    /** 拖动中面板贴边时显示的停靠预览（临时态，不持久化）。 */
+    dockHint: "left" | "right" | "bottom" | null;
     setGeometry: (patch: Partial<AssistantGeometry>) => void;
+    setDockHint: (hint: "left" | "right" | "bottom" | null) => void;
     setStyle: (patch: Partial<AssistantStyle>) => void;
     open: (mode?: AssistantGeometry["mode"]) => void;
     minimize: () => void;
@@ -115,11 +118,13 @@ export const useAiAssistantStore = create<AiAssistantStore>((set, get) => ({
     messages: [],
     streaming: false,
     busy: false,
+    dockHint: null,
     setGeometry: (patch) => {
         const geometry = { ...get().geometry, ...patch };
         persist(GEOMETRY_KEY, geometry);
         set({ geometry });
     },
+    setDockHint: (dockHint) => set({ dockHint }),
     setStyle: (patch) => {
         const style = { ...get().style, ...patch };
         persist(STYLE_KEY, style);
