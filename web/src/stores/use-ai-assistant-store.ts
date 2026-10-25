@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 import type { CanvasAgentOp } from "@/lib/canvas/canvas-agent-ops";
+import { snapPanelToEdge } from "@/lib/agent/assistant-magnet";
 
 /**
  * AI 助手（悬浮对话面板）状态模型：
@@ -69,7 +70,12 @@ function loadGeometry() {
             value.h = Math.min(value.h, window.innerHeight - 16);
             value.x = Math.min(Math.max(0, value.x), Math.max(0, window.innerWidth - value.w));
             value.y = Math.min(Math.max(0, value.y), Math.max(0, window.innerHeight - value.h));
-            if (!value.x && !value.y) {
+            // 近边的历史坐标统一贴边归一（旧版磁吸留白等），保证停靠完全贴合。
+            const unpositioned = !value.x && !value.y;
+            const snap = snapPanelToEdge(value.x, value.y, value.w, value.h);
+            value.x = snap.x;
+            value.y = snap.y;
+            if (unpositioned) {
                 value.x = Math.max(16, window.innerWidth - value.w - 28);
                 value.y = Math.max(16, window.innerHeight - value.h - 88);
             }
@@ -142,6 +148,11 @@ export const useAiAssistantStore = create<AiAssistantStore>((set, get) => ({
     setBusy: (busy) => set({ busy }),
     clearMessages: () => set({ messages: [] }),
 }));
+
+// 仅开发环境暴露调试句柄（自动化测试/控制台排查用），生产构建剔除。
+if (import.meta.env.DEV) {
+    (window as unknown as Record<string, unknown>).__aiAssistantStore = useAiAssistantStore;
+}
 
 /** 面向工具引擎的画布 ops 类型别名。 */
 export type AssistantCanvasOp = CanvasAgentOp;

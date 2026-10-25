@@ -350,6 +350,7 @@ export default {
         emptyHint: "I'm the canvas AI assistant — I can add or remove nodes, connect and trigger generation right on the canvas. Try \"build me a 3-shot storyboard\".",
         noCanvas: "No canvas open on this page",
         requestFailed: "Request failed",
+        toolDetail: "Details",
         toolRunning: "Running…",
         toolDone: "Done",
         toolFailed: "Failed",

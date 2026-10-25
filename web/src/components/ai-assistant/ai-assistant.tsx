@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { App, Popover, Select, Slider, Switch, Tooltip } from "antd";
-import { ArrowUp, Bot, Eraser, SlidersHorizontal, Square, X } from "lucide-react";
+import { ArrowUp, Bot, ChevronDown, Eraser, SlidersHorizontal, Square, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { requestImageQuestion } from "@/services/api/image";
@@ -459,28 +459,43 @@ function AssistantChat() {
     );
 }
 
+/** 剥离助手文本中的 ```tool 协议块：工具调用进度由折叠的工具行展示，用户只看结论。 */
+function visibleAssistantText(text: string) {
+    return text.replace(/```tool[\s\S]*?(?:```|$)/g, "").trim();
+}
+
 function AssistantBubble({ message, bubbleClass }: { message: AssistantMessage; bubbleClass: string }) {
     const { t } = useTranslation();
     const compact = useAiAssistantStore((state) => state.style.compact);
     const softStyle = { background: "var(--ai-soft)", color: "var(--ai-text)", borderColor: "var(--ai-border)" } as React.CSSProperties;
 
-    if (message.role === "tool") {
-        return (
-            <div className="rounded-xl border py-2 pl-3 pr-3" style={{ ...softStyle, borderLeft: "3px solid var(--ai-accent)", background: "var(--ai-bg)" }} aria-label={message.tool}>
-                <div className="mb-1 flex items-center gap-1.5 font-medium" style={{ color: "var(--ai-text)" }}>
-                    <span className={`size-1.5 rounded-full ${message.error ? "bg-red-500" : message.result !== undefined ? "bg-emerald-500" : "animate-pulse"}`} style={message.error || message.result !== undefined ? undefined : { background: "var(--ai-accent)" }} />
-                    <span className="font-mono">{message.tool}</span>
-                    {message.error ? <span className="text-red-500">{t("aiAssistant.toolFailed")}</span> : message.result !== undefined ? <span className="text-emerald-500">{t("aiAssistant.toolDone")}</span> : <span className="animate-pulse">{t("aiAssistant.toolRunning")}</span>}
-                </div>
-                <pre className={`overflow-y-auto whitespace-pre-wrap break-all font-mono ${compact ? "max-h-16 text-[11px]" : "max-h-24 text-xs"}`} style={{ color: "var(--ai-muted)" }}>{JSON.stringify(message.error ?? message.result ?? message.input, null, 2)}</pre>
-            </div>
-        );
-    }
+    if (message.role === "tool") return <ToolCallRow message={message} compact={compact} />;
     if (message.role === "error") return <div className="rounded-xl bg-red-500/10 px-3 py-2 text-xs text-red-500">{message.text}</div>;
     if (message.role === "user") {
         return (
             <div className="flex justify-end">
                 <div className={`ai-msg-user max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md shadow-sm ${bubbleClass}`}>{message.text}</div>
+            </div>
+        );
+    }
+    const visible = visibleAssistantText(message.text);
+    // 工具调用轮次的中间回复剥离协议块后为空：不渲染气泡（进度见工具行），仅流式未出字时显示占位。
+    if (!visible) {
+        if (message.text) return null;
+        return (
+            <div className="flex justify-start gap-2">
+                <span className="ai-accent mt-1 grid size-6 shrink-0 place-items-center rounded-lg shadow-sm" style={{ color: "var(--ai-accent-text)" }}>
+                    <Bot className="size-3.5" />
+                </span>
+                <div className="rounded-2xl rounded-bl-md border shadow-sm" style={{ ...softStyle, background: "var(--ai-bg)" }}>
+                    <div className={bubbleClass}>
+                        <span className="inline-flex items-center gap-1 py-1">
+                            {[0, 1, 2].map((index) => (
+                                <span key={index} className="size-1.5 animate-bounce rounded-full" style={{ background: "var(--ai-accent)", animationDelay: `${index * 120}ms` }} />
+                            ))}
+                        </span>
+                    </div>
+                </div>
             </div>
         );
     }
@@ -490,16 +505,37 @@ function AssistantBubble({ message, bubbleClass }: { message: AssistantMessage; 
                 <Bot className="size-3.5" />
             </span>
             <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-bl-md border shadow-sm" style={{ ...softStyle, background: "var(--ai-bg)" }}>
-                <div className={bubbleClass}>
-                    {message.text || (
-                        <span className="inline-flex items-center gap-1 py-1">
-                            {[0, 1, 2].map((index) => (
-                                <span key={index} className="size-1.5 animate-bounce rounded-full" style={{ background: "var(--ai-accent)", animationDelay: `${index * 120}ms` }} />
-                            ))}
-                        </span>
-                    )}
-                </div>
+                <div className={bubbleClass}>{visible}</div>
             </div>
+        </div>
+    );
+}
+
+/** 工具调用行：默认折叠只显示「工具名 + 状态」进度，点击按需展开入参/结果详情。 */
+function ToolCallRow({ message, compact }: { message: Extract<AssistantMessage, { role: "tool" }>; compact: boolean }) {
+    const { t } = useTranslation();
+    const [open, setOpen] = useState(false);
+    const done = message.result !== undefined;
+    const failed = Boolean(message.error);
+    return (
+        <div className="overflow-hidden rounded-xl border" style={{ borderLeft: "3px solid var(--ai-accent)", background: "var(--ai-bg)" }} aria-label={message.tool}>
+            <button
+                type="button"
+                className="flex w-full items-center gap-1.5 py-1.5 pl-2.5 pr-2 text-left transition hover:bg-[var(--ai-hover)]"
+                onClick={() => setOpen((value) => !value)}
+                aria-expanded={open}
+            >
+                <span className={`size-1.5 shrink-0 rounded-full ${failed ? "bg-red-500" : done ? "bg-emerald-500" : "animate-pulse"}`} style={failed || done ? undefined : { background: "var(--ai-accent)" }} />
+                <span className="truncate font-mono text-xs" style={{ color: "var(--ai-text)" }}>{message.tool}</span>
+                {failed ? <span className="text-xs text-red-500">{t("aiAssistant.toolFailed")}</span> : done ? <span className="text-xs text-emerald-500">{t("aiAssistant.toolDone")}</span> : <span className="animate-pulse text-xs" style={{ color: "var(--ai-muted)" }}>{t("aiAssistant.toolRunning")}</span>}
+                <span className="ml-auto flex items-center gap-1 text-[10px]" style={{ color: "var(--ai-muted)" }}>
+                    {t("aiAssistant.toolDetail")}
+                    <ChevronDown className={`size-3 transition-transform ${open ? "rotate-180" : ""}`} />
+                </span>
+            </button>
+            {open ? (
+                <pre className={`overflow-y-auto whitespace-pre-wrap break-all border-t px-3 py-2 font-mono ${compact ? "max-h-24 text-[11px]" : "max-h-48 text-xs"}`} style={{ borderColor: "var(--ai-border)", color: "var(--ai-muted)" }}>{JSON.stringify(message.error ?? message.result ?? message.input, null, 2)}</pre>
+            ) : null}
         </div>
     );
 }
