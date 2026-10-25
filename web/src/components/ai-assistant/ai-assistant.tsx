@@ -299,9 +299,7 @@ function InputBar({ draft, setDraft, streaming, messages, onSend, onStop, onClea
                         value={activeModel || undefined}
                         placeholder={t("aiAssistant.modelPlaceholder")}
                         options={modelOptions}
-                        onChange={(value) => setStyle({ model: value === activeModel && !selectedModel ? "" : value })}
-                        onClear={() => setStyle({ model: "" })}
-                        allowClear
+                        onChange={(value) => setStyle({ model: value ?? "" })}
                         popupMatchSelectWidth={false}
                         className="ai-model-select min-w-0 flex-1 !text-xs"
                         aria-label={t("aiAssistant.model")}
