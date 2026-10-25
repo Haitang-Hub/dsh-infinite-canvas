@@ -30,6 +30,7 @@ export function buildAssistantSystemPrompt(context: AssistantToolContext) {
         "需要操作画布时，在回复中输出一个 ```tool 代码块（JSON）：",
         '```tool\n{"name": "工具名", "input": {...}}\n```',
         "每次回复至多调用一个工具，调用后等待结果再继续。能用工具完成的事不要让用户手动操作。",
+        "调用工具时只输出上述代码块本身；不要输出裸 JSON、不要输出 <think> 思考过程，用户看不到这些内容。",
         "",
         "## 可用工具",
         "- canvas_apply_ops：批量修改画布。ops 支持 add_node（nodeType: text/image/config/video/audio/shot/director、title、position{x,y}、width、height、metadata）、update_node（id + patch/metadata）、delete_node（ids）、connect_nodes（fromNodeId/toNodeId）、select_nodes（ids）、set_viewport（viewport{x,y,k}）、run_generation（nodeId + mode: text/image/video/audio + prompt）。不传 x 时新节点放在画布最右侧。",
@@ -50,18 +51,88 @@ export function buildAssistantSystemPrompt(context: AssistantToolContext) {
     ].join("\n");
 }
 
-/** 解析回复中的 ```tool 调用块；无合法调用返回 null。 */
-export function parseAssistantToolCall(text: string): { name: string; input: Record<string, unknown> } | null {
-    const match = text.match(/```tool\s*\n([\s\S]*?)```/);
-    if (!match) return null;
+/** 解析工具调用 JSON（容忍 name/tool 两种键名）；非法返回 null。 */
+function parseToolObject(raw: string): { name: string; input: Record<string, unknown> } | null {
     try {
-        const value = JSON.parse(match[1].trim()) as { name?: unknown; input?: unknown };
-        const name = typeof value.name === "string" ? value.name : "";
+        const value = JSON.parse(raw) as Record<string, unknown>;
+        const name = typeof value.name === "string" ? value.name : typeof value.tool === "string" ? value.tool : "";
         if (!(ASSISTANT_TOOL_NAMES as readonly string[]).includes(name)) return null;
-        return { name, input: value.input && typeof value.input === "object" && !Array.isArray(value.input) ? value.input as Record<string, unknown> : {} };
+        const input = value.input && typeof value.input === "object" && !Array.isArray(value.input) ? (value.input as Record<string, unknown>) : {};
+        return { name, input };
     } catch {
         return null;
     }
+}
+
+/**
+ * 从回复文本中提取第一个工具调用并返回其在原文中的范围。
+ * 容忍三种形态：```tool 围栏、```json 围栏、裸 JSON 对象；键名容忍 name/tool。
+ * 部分模型不按围栏协议输出，直接裸写 {"tool": ...}，也必须能执行。
+ */
+export function extractAssistantToolCall(text: string): { call: { name: string; input: Record<string, unknown> }; start: number; end: number } | null {
+    const keyRe = /"(?:tool|name)"\s*:/g;
+    let match: RegExpExecArray | null;
+    while ((match = keyRe.exec(text))) {
+        const braceStart = text.lastIndexOf("{", match.index);
+        if (braceStart < 0) continue;
+        // 从最近的 { 起做括号配对（跳过字符串），提取完整 JSON 对象。
+        let depth = 0;
+        let inString = false;
+        let escaped = false;
+        let end = -1;
+        for (let i = braceStart; i < text.length; i += 1) {
+            const ch = text[i];
+            if (inString) {
+                if (escaped) escaped = false;
+                else if (ch === "\\") escaped = true;
+                else if (ch === '"') inString = false;
+                continue;
+            }
+            if (ch === '"') inString = true;
+            else if (ch === "{") depth += 1;
+            else if (ch === "}") {
+                depth -= 1;
+                if (depth === 0) {
+                    end = i + 1;
+                    break;
+                }
+            }
+        }
+        if (end < 0) continue;
+        const call = parseToolObject(text.slice(braceStart, end));
+        if (call) {
+            // 扩展范围吞掉包裹的围栏标记，便于展示层一并剥离。
+            let start = braceStart;
+            const fencePrefix = /```(?:tool|json)?\s*$/.exec(text.slice(Math.max(0, start - 12), start));
+            if (fencePrefix) start -= fencePrefix[0].length;
+            const fenceSuffix = /^\s*```/.exec(text.slice(end, end + 6));
+            if (fenceSuffix) end += fenceSuffix[0].length;
+            return { call, start, end };
+        }
+        keyRe.lastIndex = match.index + 1;
+    }
+    return null;
+}
+
+/** 解析回复中的工具调用；无合法调用返回 null。 */
+export function parseAssistantToolCall(text: string): { name: string; input: Record<string, unknown> } | null {
+    return extractAssistantToolCall(text)?.call ?? null;
+}
+
+/**
+ * 提取给用户看的内容：只保留目标进度与最终结论。
+ * 剥离 <think> 推理块（含未闭合的 </think> 之前的一切推理）、工具调用 JSON（含围栏）。
+ */
+export function visibleAssistantText(text: string): string {
+    let out = text.replace(/<think>[\s\S]*?<\/think>/g, "");
+    // 孤立 </think>（模型只吐了闭合标记）：推理在它之前，全部裁掉。
+    const closing = out.lastIndexOf("</think>");
+    if (closing >= 0) out = out.slice(closing + "</think>".length);
+    // 剥离工具调用块（可能连续多个，循环提取）。
+    for (let found = extractAssistantToolCall(out); found; found = extractAssistantToolCall(out)) {
+        out = `${out.slice(0, found.start)}${out.slice(found.end)}`;
+    }
+    return out.replace(/\n{3,}/g, "\n\n").trim();
 }
 
 /** 在当前页面内执行一次助手工具调用。 */

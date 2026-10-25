@@ -10,7 +10,7 @@ import { useBridgeStore } from "@/stores/use-bridge-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useAiAssistantStore, type AssistantMessage } from "@/stores/use-ai-assistant-store";
-import { ASSISTANT_TOOL_ROUND_LIMIT, buildAssistantSystemPrompt, parseAssistantToolCall, runAssistantTool, toAssistantAiMessages } from "@/lib/agent/ai-assistant-engine";
+import { ASSISTANT_TOOL_ROUND_LIMIT, buildAssistantSystemPrompt, parseAssistantToolCall, runAssistantTool, toAssistantAiMessages, visibleAssistantText } from "@/lib/agent/ai-assistant-engine";
 import { clampPanel, dockSideFromPanel, magnetizeFab, type DockSide } from "@/lib/agent/assistant-magnet";
 import { randomId } from "@/lib/utils";
 
@@ -556,11 +556,6 @@ function AssistantChat() {
             />
         </>
     );
-}
-
-/** 剥离助手文本中的 ```tool 协议块：工具调用进度由折叠的工具行展示，用户只看结论。 */
-function visibleAssistantText(text: string) {
-    return text.replace(/```tool[\s\S]*?(?:```|$)/g, "").trim();
 }
 
 function AssistantBubble({ message, bubbleClass }: { message: AssistantMessage; bubbleClass: string }) {
