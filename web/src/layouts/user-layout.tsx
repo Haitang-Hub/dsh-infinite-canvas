@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { AppTopNav } from "@/components/layout/app-top-nav";
 import { CanvasBridgeExecutor } from "@/components/bridge/canvas-bridge-executor";
+import { BuiltinAgentPanel } from "@/components/agent-panel/builtin-agent-panel";
 
 export default function UserLayout({ children }: { children: ReactNode }) {
     return (
@@ -11,6 +12,7 @@ export default function UserLayout({ children }: { children: ReactNode }) {
                 <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
             </div>
             <CanvasBridgeExecutor />
+            <BuiltinAgentPanel />
         </div>
     );
 }

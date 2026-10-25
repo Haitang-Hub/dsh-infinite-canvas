@@ -10,6 +10,7 @@ import { MobileNavDrawer } from "@/components/layout/mobile-nav-drawer";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { cn } from "@/lib/utils";
 import { useBridgeStore } from "@/stores/use-bridge-store";
+import { useOpenBuiltinAgent } from "@/components/agent-panel/builtin-agent-panel";
 
 export function AppTopNav() {
     const { t } = useTranslation();
@@ -17,6 +18,7 @@ export function AppTopNav() {
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
     const connected = useBridgeStore((state) => state.connected);
     const executing = useBridgeStore((state) => state.executing);
+    const openBuiltinAgent = useOpenBuiltinAgent();
     const hideHeader = /^\/canvas\/[^/]+/.test(pathname);
     const slug = pathname.split("/").filter(Boolean)[0];
     const activeToolSlug = navigationTools.some((tool) => tool.slug === slug) ? (slug as NavigationToolSlug) : undefined;
@@ -77,6 +79,7 @@ export function AppTopNav() {
                                 executing={executing}
                                 label={t(executing ? "agent.status.executing" : connected ? "agent.status.connected" : "agent.status.disconnected")}
                                 tooltip={t(executing ? "agent.status.executingTooltip" : connected ? "agent.status.connectedTooltip" : "agent.status.disconnectedTooltip")}
+                                onClick={openBuiltinAgent}
                             />
                             <UserStatusActions />
                         </div>
@@ -91,14 +94,14 @@ export function AppTopNav() {
 }
 
 /** 顶栏轻量徽标：MCP 画布执行器与桥服务的连接状态（在线/离线/执行中）。 */
-function BridgeStatusBadge({ connected, executing, label, tooltip }: { connected: boolean; executing: boolean; label: string; tooltip: string }) {
+function BridgeStatusBadge({ connected, executing, label, tooltip, onClick }: { connected: boolean; executing: boolean; label: string; tooltip: string; onClick: () => void }) {
     const color = executing ? "#d97706" : connected ? "#16a34a" : "#a8a29e";
     return (
         <Tooltip title={tooltip}>
-            <span className="flex h-8 items-center gap-1.5 text-xs text-stone-500" aria-label={label}>
+            <button type="button" className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-xs text-stone-500 transition hover:bg-stone-100 dark:hover:bg-stone-800" aria-label={label} onClick={onClick}>
                 <span className={`size-2 rounded-full ${executing ? "animate-pulse" : ""}`} style={{ background: color }} />
                 <span className="hidden lg:inline">{label}</span>
-            </span>
+            </button>
         </Tooltip>
     );
 }

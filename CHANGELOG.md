@@ -2,6 +2,9 @@
 
 ## Unreleased
 
++ [新增] 可悬浮、拖动、停靠的内置 Agent 面板：默认右下悬浮球展开；标题栏拖动、拖到屏幕左/右/下边缘自动停靠（贴边全高/底部横条，内边缘可拖动调厚度），悬浮态右下角可调尺寸，支持最小化回悬浮球，几何状态 localStorage 持久化（刷新恢复）。顶栏与画布页的"画布桥"状态徽标点击即可展开。
++ [新增] 内置 Agent 对话与画布工具调用：复用渠道配置的文本模型流式对话；模型经 ```tool 协议调用 canvas_apply_ops / canvas_get_state / canvas_list_projects / site_navigate / generation_get_status 在本页直接执行（与 MCP 工具同语义，不经过桥），工具卡片实时显示执行状态，单轮最多 8 次工具循环。
+
 + [变更] 3D 导演台从本项目中真删除，改为独立插件使用：删除 web/src/pages/director（编辑器/隐藏 iframe 宿主/模型资产 63MB）与 stage/camera/preview 全部 MCP 工具及桥侧导演台路由。画布保留"导演台节点"作为链接锚点（内联生成 directorDeskId），悬浮"打开导演台"改为新标签页打开 3d-director-desk 插件应用（默认 http://127.0.0.1:5080，可经 config.js 的 directorDeskUrl 覆盖）。导演台工具由该插件的 MCP（17372）提供，两个插件同时在 harness 挂载即可协作。
 
 + [新增] MCP 插件化改造（接入 DeepSeek harness）：canvas-agent 解绑 Codex，收敛为「画布桥服务 + stdio MCP 服务」。工具调用链路 MCP → HTTP(17371) → SSE → 浏览器执行器；新增 `canvas-agent doctor` 一键自检（桥在线/执行器在线/data 目录可写/协议版本）与 `GET /bootstrap` token 零配置发现。
