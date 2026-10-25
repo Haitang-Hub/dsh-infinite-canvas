@@ -87,35 +87,46 @@ function themeVars(theme: (typeof canvasThemes)[keyof typeof canvasThemes], dark
     } as React.CSSProperties;
 }
 
-/** 标题栏：拖动（自由移动）+ 松手指针入边整边停靠 + 唯一的关闭（最小化为悬浮球）按钮。 */
+/** 标题栏：拖动（自由移动）+ 拖出后松手指针入边整边停靠 + 唯一的关闭（最小化为悬浮球）按钮。 */
 function AssistantHeader() {
     const { t } = useTranslation();
     const geometry = useAiAssistantStore((state) => state.geometry);
     const setGeometry = useAiAssistantStore((state) => state.setGeometry);
     const minimize = useAiAssistantStore((state) => state.minimize);
-    const drag = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
+    const drag = useRef<{ startX: number; startY: number; originX: number; originY: number; originW: number; originH: number; moved: boolean; undocked: boolean } | null>(null);
 
     const onPointerDown = (event: React.PointerEvent) => {
         if ((event.target as HTMLElement).closest("button")) return;
         const panel = (event.currentTarget as HTMLElement).closest(".ai-assistant") as HTMLElement | null;
         const rect = panel?.getBoundingClientRect();
-        // 停靠态下按下即切回悬浮并锚定到当前实际位置：随时可拖出，无需先双击。
         const originX = rect?.x ?? geometry.x;
         const originY = rect?.y ?? geometry.y;
-        if (geometry.mode !== "float") setGeometry({ mode: "float", x: originX, y: originY });
-        drag.current = { startX: event.clientX, startY: event.clientY, originX, originY };
+        // 停靠态不立即切悬浮：等真正拖动超过阈值才带当前视觉尺寸拖出，避免单击导致面板缩水。
+        drag.current = { startX: event.clientX, startY: event.clientY, originX, originY, originW: rect?.width ?? geometry.w, originH: rect?.height ?? geometry.h, moved: false, undocked: false };
         const onMove = (moveEvent: PointerEvent) => {
             const state = drag.current;
             if (!state) return;
-            const pos = clampPanel(state.originX + moveEvent.clientX - state.startX, state.originY + moveEvent.clientY - state.startY);
+            const dx = moveEvent.clientX - state.startX;
+            const dy = moveEvent.clientY - state.startY;
+            if (!state.moved && Math.abs(dx) + Math.abs(dy) <= 4) return;
+            state.moved = true;
+            if (!state.undocked) {
+                state.undocked = true;
+                if (useAiAssistantStore.getState().geometry.mode !== "float") {
+                    setGeometry({ mode: "float", x: state.originX, y: state.originY, w: state.originW, h: state.originH });
+                }
+            }
+            const pos = clampPanel(state.originX + dx, state.originY + dy);
             setGeometry(pos);
         };
         const onUp = (upEvent: PointerEvent) => {
             const state = drag.current;
             drag.current = null;
-            if (state) {
+            // 只有真正拖动过才判定停靠意图，避免误触点击把面板吸走。
+            if (state?.moved) {
                 const side = dockSideFromPointer(upEvent.clientX, upEvent.clientY);
-                if (side === "bottom") setGeometry({ mode: "bottom", h: Math.min(geometry.h, 420) });
+                const currentH = useAiAssistantStore.getState().geometry.h;
+                if (side === "bottom") setGeometry({ mode: "bottom", h: Math.min(currentH, 420) });
                 else if (side) setGeometry({ mode: side });
             }
             window.removeEventListener("pointermove", onMove);
@@ -236,6 +247,8 @@ function DockEdge({ mode }: { mode: "left" | "right" | "bottom" }) {
             className="absolute z-10"
             style={edgeStyle}
             onPointerDown={(event) => {
+                event.preventDefault();
+                document.body.style.userSelect = "none";
                 const start = horizontal ? event.clientY : event.clientX;
                 const startSize = horizontal ? geometry.h : geometry.w;
                 const onMove = (moveEvent: PointerEvent) => {
@@ -246,6 +259,7 @@ function DockEdge({ mode }: { mode: "left" | "right" | "bottom" }) {
                     else setGeometry({ w: Math.min(Math.max(280, size), Math.min(Math.floor(window.innerWidth * 0.7), 720)) });
                 };
                 const onUp = () => {
+                    document.body.style.userSelect = "";
                     window.removeEventListener("pointermove", onMove);
                     window.removeEventListener("pointerup", onUp);
                 };
@@ -266,6 +280,8 @@ function ResizeCorner() {
         <span
             className="absolute bottom-0 right-0 size-4 cursor-nwse-resize"
             onPointerDown={(event) => {
+                event.preventDefault();
+                document.body.style.userSelect = "none";
                 drag.current = { startX: event.clientX, startY: event.clientY, w: geometry.w, h: geometry.h };
                 (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
             }}
@@ -277,7 +293,10 @@ function ResizeCorner() {
                     h: Math.min(Math.max(MIN_H, state.h + event.clientY - state.startY), window.innerHeight - geometry.y - 8),
                 });
             }}
-            onPointerUp={() => { drag.current = null; }}
+            onPointerUp={() => {
+                drag.current = null;
+                document.body.style.userSelect = "";
+            }}
             aria-hidden
         >
             <svg viewBox="0 0 16 16" className="size-full" style={{ color: "var(--ai-muted)" }}><path d="M14 6 6 14M14 11l-3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
