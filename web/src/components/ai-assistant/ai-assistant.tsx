@@ -11,7 +11,7 @@ import { useThemeStore } from "@/stores/use-theme-store";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useAiAssistantStore, type AssistantMessage } from "@/stores/use-ai-assistant-store";
 import { ASSISTANT_TOOL_ROUND_LIMIT, buildAssistantSystemPrompt, parseAssistantToolCall, runAssistantTool, toAssistantAiMessages } from "@/lib/agent/ai-assistant-engine";
-import { clampPanel, magnetizeFab, snapPanelToEdge } from "@/lib/agent/assistant-magnet";
+import { clampPanel, dockSideFromPointer, magnetizeFab } from "@/lib/agent/assistant-magnet";
 import { randomId } from "@/lib/utils";
 
 const MIN_W = 320;
@@ -21,8 +21,9 @@ const FAB_SIZE = 52;
 const INPUT_MAX_HEIGHT = 200;
 
 /**
- * AI 助手：可悬浮、拖动、贴边停靠的对话面板。
- * - 拖动自由移动，松手时靠近屏幕边/角自动贴边停靠（完全贴齐，无回弹）
+ * AI 助手：可悬浮、拖动、整边停靠的对话面板。
+ * - 拖动自由移动；指针压入屏幕左/右/底边缘内松手 → 整边停靠（左/右全高侧栏、底部全宽，完全贴合）
+ * - 停靠态按住标题栏即可拖出恢复悬浮
  * - 最小化为可拖动悬浮球（带左右磁吸）
  * - 底部为圆角卡片式输入区：自适应高度 + 内嵌模型选择/外观/清空 + 圆形发送键
  * - 外观（毛玻璃/紧凑）与几何状态持久化；配色取自画布主题 token
@@ -32,32 +33,41 @@ export function AiAssistant() {
 
     if (geometry.mode === "minimized") return <AssistantFab />;
     return (
-        <AssistantWindow>
+        <AssistantWindow key={geometry.mode === "float" ? "float" : "docked"}>
             <AssistantHeader />
             <AssistantChat />
         </AssistantWindow>
     );
 }
 
-/** 面板窗体：主题变量注入。 */
+/** 面板窗体：主题变量注入；停靠态按边贴合视口（直角、只留内边界），悬浮态圆角自由定位。 */
 function AssistantWindow({ children }: { children: React.ReactNode }) {
     const dark = useThemeStore((state) => state.theme) === "dark";
     const theme = canvasThemes[dark ? "dark" : "light"];
     const geometry = useAiAssistantStore((state) => state.geometry);
     const style = useAiAssistantStore((state) => state.style);
+    const docked = geometry.mode !== "float";
 
+    const position: React.CSSProperties = geometry.mode === "left"
+        ? { top: 0, bottom: 0, left: 0, width: geometry.w }
+        : geometry.mode === "right"
+            ? { top: 0, bottom: 0, right: 0, width: geometry.w }
+            : geometry.mode === "bottom"
+                ? { left: 0, right: 0, bottom: 0, height: geometry.h }
+                : { left: geometry.x, top: geometry.y, width: geometry.w, height: geometry.h };
     const windowStyle = {
-        left: geometry.x,
-        top: geometry.y,
-        width: geometry.w,
-        height: geometry.h,
+        ...position,
         ...themeVars(theme, dark, style),
     } as React.CSSProperties;
+    const borderSide = geometry.mode === "left" ? { borderRightWidth: 1 } : geometry.mode === "right" ? { borderLeftWidth: 1 } : { borderTopWidth: 1 };
 
     return (
-        <div className="ai-assistant fixed z-[95] flex flex-col overflow-hidden rounded-2xl border" style={windowStyle}>
+        <div
+            className={`ai-assistant fixed z-[95] flex flex-col overflow-hidden border ${docked ? "rounded-none border-y-0 border-x-0" : "rounded-2xl"}`}
+            style={{ ...windowStyle, ...(docked ? borderSide : {}) }}
+        >
             {children}
-            <ResizeCorner />
+            {!docked ? <ResizeCorner /> : null}
         </div>
     );
 }
@@ -77,7 +87,7 @@ function themeVars(theme: (typeof canvasThemes)[keyof typeof canvasThemes], dark
     } as React.CSSProperties;
 }
 
-/** 标题栏：拖动（自由移动）+ 松手贴边停靠 + 唯一的关闭（最小化为悬浮球）按钮。 */
+/** 标题栏：拖动（自由移动）+ 松手指针入边整边停靠 + 唯一的关闭（最小化为悬浮球）按钮。 */
 function AssistantHeader() {
     const { t } = useTranslation();
     const geometry = useAiAssistantStore((state) => state.geometry);
@@ -89,19 +99,23 @@ function AssistantHeader() {
         if ((event.target as HTMLElement).closest("button")) return;
         const panel = (event.currentTarget as HTMLElement).closest(".ai-assistant") as HTMLElement | null;
         const rect = panel?.getBoundingClientRect();
-        drag.current = { startX: event.clientX, startY: event.clientY, originX: rect?.x ?? geometry.x, originY: rect?.y ?? geometry.y };
+        // 停靠态下按下即切回悬浮并锚定到当前实际位置：随时可拖出，无需先双击。
+        const originX = rect?.x ?? geometry.x;
+        const originY = rect?.y ?? geometry.y;
+        if (geometry.mode !== "float") setGeometry({ mode: "float", x: originX, y: originY });
+        drag.current = { startX: event.clientX, startY: event.clientY, originX, originY };
         const onMove = (moveEvent: PointerEvent) => {
             const state = drag.current;
             if (!state) return;
-            const pos = clampPanel(state.originX + moveEvent.clientX - state.startX, state.originY + moveEvent.clientY - state.startY, geometry.w, geometry.h);
+            const pos = clampPanel(state.originX + moveEvent.clientX - state.startX, state.originY + moveEvent.clientY - state.startY);
             setGeometry(pos);
         };
         const onUp = (upEvent: PointerEvent) => {
             const state = drag.current;
             drag.current = null;
             if (state) {
-                const snap = snapPanelToEdge(state.originX + upEvent.clientX - state.startX, state.originY + upEvent.clientY - state.startY, geometry.w, geometry.h);
-                setGeometry({ x: snap.x, y: snap.y });
+                const side = dockSideFromPointer(upEvent.clientX, upEvent.clientY);
+                if (side) setGeometry({ mode: side });
             }
             window.removeEventListener("pointermove", onMove);
             window.removeEventListener("pointerup", onUp);

@@ -1,47 +1,31 @@
 /**
  * 面板拖动几何计算：
  * - clampPanel：拖动中限制在视口内（自由移动，无吸附）
- * - snapPanelToEdge：松手时距边缘 SNAPPX 内则贴边停靠（完全贴齐，无留白无回弹）
+ * - dockSideFromPointer：指针深入屏幕边缘 DOCK_RANGE 内松手 → 整边停靠为侧栏（左/右全高、底全宽，完全贴合）
  * 悬浮球仍保留左右磁吸（magnetizeFab）。
  */
-export const EDGE_SNAP_RANGE = 56;
+export const DOCK_RANGE = 56;
 
-export type DockSide = "left" | "right" | "top" | "bottom";
-export type SnapResult = { x: number; y: number; sides: DockSide[] };
+export type DockSide = "left" | "right" | "bottom";
 
 function clamp(value: number, min: number, max: number) {
     return Math.min(Math.max(min, value), Math.max(min, max));
 }
 
 /** 拖动中：仅限制面板在视口内。 */
-export function clampPanel(rawX: number, rawY: number, w: number, h: number): { x: number; y: number } {
+export function clampPanel(rawX: number, rawY: number): { x: number; y: number } {
     return {
         x: clamp(rawX, 0, Math.max(0, window.innerWidth - 120)),
         y: clamp(rawY, 0, Math.max(0, window.innerHeight - 48)),
     };
 }
 
-/** 松手时：靠近的边贴齐停靠（x=0 / 右边贴右边框等），可同时贴两边成贴角。 */
-export function snapPanelToEdge(rawX: number, rawY: number, w: number, h: number): SnapResult {
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    let { x, y } = clampPanel(rawX, rawY, w, h);
-    const sides: DockSide[] = [];
-    if (x <= EDGE_SNAP_RANGE) {
-        x = 0;
-        sides.push("left");
-    } else if (vw - (x + w) <= EDGE_SNAP_RANGE) {
-        x = Math.max(0, vw - w);
-        sides.push("right");
-    }
-    if (y <= EDGE_SNAP_RANGE) {
-        y = 0;
-        sides.push("top");
-    } else if (vh - (y + h) <= EDGE_SNAP_RANGE) {
-        y = Math.max(0, vh - h);
-        sides.push("bottom");
-    }
-    return { x, y, sides };
+/** 松手时指针所在的停靠意图区：左/右/底，深入 56px 内判定。 */
+export function dockSideFromPointer(clientX: number, clientY: number): DockSide | null {
+    if (clientX <= DOCK_RANGE) return "left";
+    if (window.innerWidth - clientX <= DOCK_RANGE) return "right";
+    if (window.innerHeight - clientY <= DOCK_RANGE) return "bottom";
+    return null;
 }
 
 /** 悬浮球的磁吸：只在左右两侧吸附并保持垂直自由。 */

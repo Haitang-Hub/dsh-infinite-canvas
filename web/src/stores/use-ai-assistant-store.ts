@@ -1,7 +1,6 @@
 import { create } from "zustand";
 
 import type { CanvasAgentOp } from "@/lib/canvas/canvas-agent-ops";
-import { snapPanelToEdge } from "@/lib/agent/assistant-magnet";
 
 /**
  * AI 助手（悬浮对话面板）状态模型：
@@ -11,7 +10,8 @@ import { snapPanelToEdge } from "@/lib/agent/assistant-magnet";
  */
 
 export type AssistantGeometry = {
-    mode: "float" | "minimized";
+    /** float 自由悬浮；left/right/bottom 整边停靠侧栏；minimized 悬浮球。 */
+    mode: "float" | "left" | "right" | "bottom" | "minimized";
     x: number;
     y: number;
     w: number;
@@ -61,29 +61,23 @@ function persist(key: string, value: unknown) {
 }
 
 function loadGeometry() {
-    // 旧版本持久化里可能存在 left/right/bottom 停靠模式，统一回落为悬浮。
     return persisted(GEOMETRY_KEY, DEFAULT_GEOMETRY, (value) => {
-        if (value.mode !== "float" && value.mode !== "minimized") value.mode = "minimized";
-        // 坐标可能来自更大的视口：加载时夹取回当前视口，避免面板落在屏幕外。
-        if (typeof window !== "undefined") {
+        if (value.mode !== "float" && value.mode !== "minimized" && value.mode !== "left" && value.mode !== "right" && value.mode !== "bottom") value.mode = "minimized";
+        // 坐标可能来自更大的视口：加载时夹取回当前视口，避免悬浮面板落在屏幕外。
+        if (typeof window !== "undefined" && value.mode === "float") {
             value.w = Math.min(value.w, window.innerWidth - 16);
             value.h = Math.min(value.h, window.innerHeight - 16);
             value.x = Math.min(Math.max(0, value.x), Math.max(0, window.innerWidth - value.w));
             value.y = Math.min(Math.max(0, value.y), Math.max(0, window.innerHeight - value.h));
-            // 近边的历史坐标统一贴边归一（旧版磁吸留白等），保证停靠完全贴合。
-            const unpositioned = !value.x && !value.y;
-            const snap = snapPanelToEdge(value.x, value.y, value.w, value.h);
-            value.x = snap.x;
-            value.y = snap.y;
-            if (unpositioned) {
+            if (!value.x && !value.y) {
                 value.x = Math.max(16, window.innerWidth - value.w - 28);
                 value.y = Math.max(16, window.innerHeight - value.h - 88);
             }
-            if (value.fabX || value.fabY) {
-                const size = 52;
-                value.fabX = Math.min(Math.max(0, value.fabX), Math.max(0, window.innerWidth - size));
-                value.fabY = Math.min(Math.max(0, value.fabY), Math.max(0, window.innerHeight - size));
-            }
+        }
+        if (typeof window !== "undefined" && (value.fabX || value.fabY)) {
+            const size = 52;
+            value.fabX = Math.min(Math.max(0, value.fabX), Math.max(0, window.innerWidth - size));
+            value.fabY = Math.min(Math.max(0, value.fabY), Math.max(0, window.innerHeight - size));
         }
         return value;
     });
