@@ -93,7 +93,7 @@ function AssistantHeader() {
     const geometry = useAiAssistantStore((state) => state.geometry);
     const setGeometry = useAiAssistantStore((state) => state.setGeometry);
     const minimize = useAiAssistantStore((state) => state.minimize);
-    const drag = useRef<{ startX: number; startY: number; originX: number; originY: number; moved: boolean; undocked: boolean } | null>(null);
+    const drag = useRef<{ startX: number; startY: number; originX: number; originY: number; moved: boolean; undockSide: "left" | "right" | "bottom" | null } | null>(null);
 
     const onPointerDown = (event: React.PointerEvent) => {
         if ((event.target as HTMLElement).closest("button")) return;
@@ -102,7 +102,7 @@ function AssistantHeader() {
         const originX = rect?.x ?? geometry.x;
         const originY = rect?.y ?? geometry.y;
         // 停靠态不立即切悬浮：等真正拖动超过阈值才带当前视觉尺寸拖出，避免单击导致面板缩水。
-        drag.current = { startX: event.clientX, startY: event.clientY, originX, originY, moved: false, undocked: false };
+        drag.current = { startX: event.clientX, startY: event.clientY, originX, originY, moved: false, undockSide: null };
         const onMove = (moveEvent: PointerEvent) => {
             const state = drag.current;
             if (!state) return;
@@ -110,9 +110,9 @@ function AssistantHeader() {
             const dy = moveEvent.clientY - state.startY;
             if (!state.moved && Math.abs(dx) + Math.abs(dy) <= 4) return;
             state.moved = true;
-            // 仅当本次手势真的把停靠面板拖出时标记 undocked：悬浮态开始的拖动保持 false，松手才能判定停靠。
-            if (!state.undocked && useAiAssistantStore.getState().geometry.mode !== "float") {
-                state.undocked = true;
+            // 记录本次手势拖出的停靠侧：同侧松手不回吸（沿边拖动），拖到别的边仍可停靠。
+            if (!state.undockSide && useAiAssistantStore.getState().geometry.mode !== "float") {
+                state.undockSide = useAiAssistantStore.getState().geometry.mode as "left" | "right" | "bottom";
                 // 拖出后恢复悬浮尺寸（w/h 保存的是最近一次悬浮/用户调整值），高度不超过 85% 视口；
                 // 不能沿用停靠态视觉尺寸（底停靠全宽、侧停靠全高），否则悬浮后 x/y 全被夹死导致面板拖不动。
                 const g = useAiAssistantStore.getState().geometry;
@@ -131,12 +131,14 @@ function AssistantHeader() {
         const onUp = (upEvent: PointerEvent) => {
             const state = drag.current;
             drag.current = null;
-            // 只有"从悬浮态开始"的拖动才判定停靠意图：本次手势拖出的面板不再被吸回，避免沿边拖动时松手立刻重新停靠。
-            if (state?.moved && !state.undocked) {
+            // 松手停靠判定：跳过本次拖出的一侧（沿边拖动不回吸），其余边（含从悬浮开始的所有边）正常停靠。
+            if (state?.moved) {
                 const side = dockSideFromPointer(upEvent.clientX, upEvent.clientY);
                 const currentH = useAiAssistantStore.getState().geometry.h;
-                if (side === "bottom") setGeometry({ mode: "bottom", h: Math.min(currentH, 420) });
-                else if (side) setGeometry({ mode: side });
+                if (side && side !== state.undockSide) {
+                    if (side === "bottom") setGeometry({ mode: "bottom", h: Math.min(currentH, 420) });
+                    else setGeometry({ mode: side });
+                }
             }
             window.removeEventListener("pointermove", onMove);
             window.removeEventListener("pointerup", onUp);
