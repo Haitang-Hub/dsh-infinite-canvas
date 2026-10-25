@@ -627,7 +627,16 @@
     color: var(--ai-text);
     box-shadow: 0 24px 64px -14px rgba(0, 0, 0, 0.4);
 }
-/* 磁吸激活时启用位置过渡，产生"被吸住"的回弹手感；自由拖动时不加过渡保持跟手。 */
+/* 强调元素（头像/发送键/悬浮球等）：跟随主题主色的单色渐变。 */
+.ai-accent {
+    background-image: linear-gradient(135deg, color-mix(in srgb, var(--ai-accent, #6366f1) 80%, white), color-mix(in srgb, var(--ai-accent, #6366f1) 86%, black));
+    box-shadow: 0 6px 20px -6px color-mix(in srgb, var(--ai-accent, #6366f1) 55%, transparent);
+}
+/* 用户消息气泡：同一主色渐变 + 反色文字。 */
+.ai-msg-user {
+    background-image: linear-gradient(135deg, color-mix(in srgb, var(--ai-accent) 88%, white), color-mix(in srgb, var(--ai-accent) 94%, black));
+    color: var(--ai-accent-text);
+}
 .ai-model-select .ant-select-selection-item {
     font-size: 12px;
 }
