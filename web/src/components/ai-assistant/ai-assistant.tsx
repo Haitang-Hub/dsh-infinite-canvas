@@ -11,7 +11,7 @@ import { useThemeStore } from "@/stores/use-theme-store";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useAiAssistantStore, type AssistantMessage } from "@/stores/use-ai-assistant-store";
 import { ASSISTANT_TOOL_ROUND_LIMIT, buildAssistantSystemPrompt, parseAssistantToolCall, runAssistantTool, toAssistantAiMessages } from "@/lib/agent/ai-assistant-engine";
-import { magnetizeFab, magnetizePanel } from "@/lib/agent/assistant-magnet";
+import { clampPanel, magnetizeFab, snapPanelToEdge } from "@/lib/agent/assistant-magnet";
 import { randomId } from "@/lib/utils";
 
 const MIN_W = 320;
@@ -21,9 +21,9 @@ const FAB_SIZE = 52;
 const INPUT_MAX_HEIGHT = 200;
 
 /**
- * AI 助手：可悬浮、拖动、磁性吸附的对话面板。
- * - 自由拖动，靠近屏幕四边/四角自动磁吸贴齐（带回弹过渡动画）
- * - 最小化为可拖动悬浮球（同样带左右磁吸）
+ * AI 助手：可悬浮、拖动、贴边停靠的对话面板。
+ * - 拖动自由移动，松手时靠近屏幕边/角自动贴边停靠（完全贴齐，无回弹）
+ * - 最小化为可拖动悬浮球（带左右磁吸）
  * - 底部为圆角卡片式输入区：自适应高度 + 内嵌模型选择/外观/清空 + 圆形发送键
  * - 外观（毛玻璃/紧凑）与几何状态持久化；配色取自画布主题 token
  */
@@ -39,13 +39,12 @@ export function AiAssistant() {
     );
 }
 
-/** 面板窗体：主题变量注入 + 磁吸位置 + 拖动中过渡动画。 */
+/** 面板窗体：主题变量注入。 */
 function AssistantWindow({ children }: { children: React.ReactNode }) {
     const dark = useThemeStore((state) => state.theme) === "dark";
     const theme = canvasThemes[dark ? "dark" : "light"];
     const geometry = useAiAssistantStore((state) => state.geometry);
     const style = useAiAssistantStore((state) => state.style);
-    const magnet = useAiAssistantStore((state) => state.magnetized);
 
     const windowStyle = {
         left: geometry.x,
@@ -56,10 +55,7 @@ function AssistantWindow({ children }: { children: React.ReactNode }) {
     } as React.CSSProperties;
 
     return (
-        <div
-            className={`ai-assistant fixed z-[95] flex flex-col overflow-hidden rounded-2xl border ${magnet ? "ai-magnet" : ""}`}
-            style={windowStyle}
-        >
+        <div className="ai-assistant fixed z-[95] flex flex-col overflow-hidden rounded-2xl border" style={windowStyle}>
             {children}
             <ResizeCorner />
         </div>
@@ -81,12 +77,11 @@ function themeVars(theme: (typeof canvasThemes)[keyof typeof canvasThemes], dark
     } as React.CSSProperties;
 }
 
-/** 标题栏：拖动（磁吸）+ 唯一的关闭（最小化为悬浮球）按钮。 */
+/** 标题栏：拖动（自由移动）+ 松手贴边停靠 + 唯一的关闭（最小化为悬浮球）按钮。 */
 function AssistantHeader() {
     const { t } = useTranslation();
     const geometry = useAiAssistantStore((state) => state.geometry);
     const setGeometry = useAiAssistantStore((state) => state.setGeometry);
-    const setMagnetized = useAiAssistantStore((state) => state.setMagnetized);
     const minimize = useAiAssistantStore((state) => state.minimize);
     const drag = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
 
@@ -95,17 +90,19 @@ function AssistantHeader() {
         const panel = (event.currentTarget as HTMLElement).closest(".ai-assistant") as HTMLElement | null;
         const rect = panel?.getBoundingClientRect();
         drag.current = { startX: event.clientX, startY: event.clientY, originX: rect?.x ?? geometry.x, originY: rect?.y ?? geometry.y };
-        setMagnetized(false);
         const onMove = (moveEvent: PointerEvent) => {
             const state = drag.current;
             if (!state) return;
-            const magnet = magnetizePanel(state.originX + moveEvent.clientX - state.startX, state.originY + moveEvent.clientY - state.startY, geometry.w, geometry.h);
-            setMagnetized(magnet.sides.length > 0);
-            setGeometry({ x: magnet.x, y: magnet.y });
+            const pos = clampPanel(state.originX + moveEvent.clientX - state.startX, state.originY + moveEvent.clientY - state.startY, geometry.w, geometry.h);
+            setGeometry(pos);
         };
-        const onUp = () => {
+        const onUp = (upEvent: PointerEvent) => {
+            const state = drag.current;
             drag.current = null;
-            setMagnetized(false);
+            if (state) {
+                const snap = snapPanelToEdge(state.originX + upEvent.clientX - state.startX, state.originY + upEvent.clientY - state.startY, geometry.w, geometry.h);
+                setGeometry({ x: snap.x, y: snap.y });
+            }
             window.removeEventListener("pointermove", onMove);
             window.removeEventListener("pointerup", onUp);
         };

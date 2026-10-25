@@ -82,10 +82,7 @@ export type AiAssistantStore = {
     messages: AssistantMessage[];
     streaming: boolean;
     busy: boolean;
-    /** 拖动中是否处于磁吸贴边状态（用于开 吸附回弹过渡动画）。 */
-    magnetized: boolean;
     setGeometry: (patch: Partial<AssistantGeometry>) => void;
-    setMagnetized: (value: boolean) => void;
     setStyle: (patch: Partial<AssistantStyle>) => void;
     open: (mode?: AssistantGeometry["mode"]) => void;
     minimize: () => void;
@@ -102,13 +99,11 @@ export const useAiAssistantStore = create<AiAssistantStore>((set, get) => ({
     messages: [],
     streaming: false,
     busy: false,
-    magnetized: false,
     setGeometry: (patch) => {
         const geometry = { ...get().geometry, ...patch };
         persist(GEOMETRY_KEY, geometry);
         set({ geometry });
     },
-    setMagnetized: (magnetized) => set({ magnetized }),
     setStyle: (patch) => {
         const style = { ...get().style, ...patch };
         persist(STYLE_KEY, style);

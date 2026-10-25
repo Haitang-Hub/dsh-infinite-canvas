@@ -1,54 +1,64 @@
 /**
- * 磁性吸附几何计算：悬浮面板/悬浮球拖动时对屏幕四边与四角的磁吸。
- * - MAGNET_RANGE：进入该距离后坐标被"吸"到贴边位置（配合 CSS 过渡产生回弹手感）
- * - MARGIN：贴边留白
+ * 面板拖动几何计算：
+ * - clampPanel：拖动中限制在视口内（自由移动，无吸附）
+ * - snapPanelToEdge：松手时距边缘 SNAPPX 内则贴边停靠（完全贴齐，无留白无回弹）
+ * 悬浮球仍保留左右磁吸（magnetizeFab）。
  */
-export const MAGNET_RANGE = 36;
-export const MAGNET_MARGIN = 8;
+export const EDGE_SNAP_RANGE = 56;
 
-export type MagnetSide = "left" | "right" | "top" | "bottom";
-export type MagnetResult = { x: number; y: number; sides: MagnetSide[] };
+export type DockSide = "left" | "right" | "top" | "bottom";
+export type SnapResult = { x: number; y: number; sides: DockSide[] };
 
 function clamp(value: number, min: number, max: number) {
     return Math.min(Math.max(min, value), Math.max(min, max));
 }
 
-/** 对悬浮面板的原始坐标做磁吸修正：靠近的边被吸附贴齐，可同时吸附两边形成贴角。 */
-export function magnetizePanel(rawX: number, rawY: number, w: number, h: number): MagnetResult {
+/** 拖动中：仅限制面板在视口内。 */
+export function clampPanel(rawX: number, rawY: number, w: number, h: number): { x: number; y: number } {
+    return {
+        x: clamp(rawX, 0, Math.max(0, window.innerWidth - 120)),
+        y: clamp(rawY, 0, Math.max(0, window.innerHeight - 48)),
+    };
+}
+
+/** 松手时：靠近的边贴齐停靠（x=0 / 右边贴右边框等），可同时贴两边成贴角。 */
+export function snapPanelToEdge(rawX: number, rawY: number, w: number, h: number): SnapResult {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    let x = clamp(rawX, 0, vw - 120);
-    let y = clamp(rawY, 0, vh - 48);
-    const sides: MagnetSide[] = [];
-    if (x <= MAGNET_RANGE) {
-        x = MAGNET_MARGIN;
+    let { x, y } = clampPanel(rawX, rawY, w, h);
+    const sides: DockSide[] = [];
+    if (x <= EDGE_SNAP_RANGE) {
+        x = 0;
         sides.push("left");
-    } else if (vw - (x + w) <= MAGNET_RANGE) {
-        x = Math.max(MAGNET_MARGIN, vw - w - MAGNET_MARGIN);
+    } else if (vw - (x + w) <= EDGE_SNAP_RANGE) {
+        x = Math.max(0, vw - w);
         sides.push("right");
     }
-    if (y <= MAGNET_RANGE) {
-        y = MAGNET_MARGIN;
+    if (y <= EDGE_SNAP_RANGE) {
+        y = 0;
         sides.push("top");
-    } else if (vh - (y + h) <= MAGNET_RANGE) {
-        y = Math.max(MAGNET_MARGIN, vh - h - MAGNET_MARGIN);
+    } else if (vh - (y + h) <= EDGE_SNAP_RANGE) {
+        y = Math.max(0, vh - h);
         sides.push("bottom");
     }
     return { x, y, sides };
 }
 
 /** 悬浮球的磁吸：只在左右两侧吸附并保持垂直自由。 */
+const FAB_SNAP_RANGE = 76;
+const FAB_MARGIN = 8;
+
 export function magnetizeFab(rawX: number, rawY: number, size: number): { x: number; y: number; side: "left" | "right" | null } {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    let x = clamp(rawX, MAGNET_MARGIN, vw - size - MAGNET_MARGIN);
-    const y = clamp(rawY, MAGNET_MARGIN, vh - size - MAGNET_MARGIN);
+    let x = clamp(rawX, FAB_MARGIN, vw - size - FAB_MARGIN);
+    const y = clamp(rawY, FAB_MARGIN, vh - size - FAB_MARGIN);
     let side: "left" | "right" | null = null;
-    if (x <= MAGNET_RANGE + 40) {
-        x = MAGNET_MARGIN;
+    if (x <= FAB_SNAP_RANGE) {
+        x = FAB_MARGIN;
         side = "left";
-    } else if (vw - (x + size) <= MAGNET_RANGE + 40) {
-        x = vw - size - MAGNET_MARGIN;
+    } else if (vw - (x + size) <= FAB_SNAP_RANGE) {
+        x = vw - size - FAB_MARGIN;
         side = "right";
     }
     return { x, y, side };
