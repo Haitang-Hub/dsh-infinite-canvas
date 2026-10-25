@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { App, Button, Popover, Slider, Switch, Tooltip } from "antd";
+import { App, Button, Popover, Select, Slider, Switch, Tooltip } from "antd";
 import { Bot, ChevronDown, CircleStop, Eraser, Grip, Maximize2, PanelBottom, PanelLeft, PanelRight, Send, SlidersHorizontal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { requestImageQuestion } from "@/services/api/image";
-import { useConfigStore } from "@/stores/use-config-store";
+import { modelOptionLabel, selectableModelsByCapability, useConfigStore } from "@/stores/use-config-store";
 import { useBridgeStore } from "@/stores/use-bridge-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { ASSISTANT_ACCENT_PRESETS, useAiAssistantStore, type AssistantGeometry, type AssistantMessage } from "@/stores/use-ai-assistant-store";
+import { useAiAssistantStore, type AssistantGeometry, type AssistantMessage } from "@/stores/use-ai-assistant-store";
 import { ASSISTANT_TOOL_ROUND_LIMIT, buildAssistantSystemPrompt, parseAssistantToolCall, runAssistantTool, toAssistantAiMessages } from "@/lib/agent/ai-assistant-engine";
 import { dockIntentFromPointer, magnetizeFab, magnetizePanel } from "@/lib/agent/assistant-magnet";
 import { randomId } from "@/lib/utils";
@@ -42,7 +42,8 @@ export function AiAssistant() {
 /** 面板窗体：主题变量注入 + 磁吸位置 + 拖动中过渡动画。 */
 function AssistantWindow({ dockHint, children }: { dockHint: "left" | "right" | "bottom" | null; children: React.ReactNode }) {
     const { t } = useTranslation();
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const dark = useThemeStore((state) => state.theme) === "dark";
+    const theme = canvasThemes[dark ? "dark" : "light"];
     const geometry = useAiAssistantStore((state) => state.geometry);
     const style = useAiAssistantStore((state) => state.style);
     const magnet = useAiAssistantStore((state) => state.magnetized);
@@ -51,7 +52,7 @@ function AssistantWindow({ dockHint, children }: { dockHint: "left" | "right" | 
     const position = positionFor(geometry, dockHint);
     const windowStyle = {
         ...position,
-        ...themeVars(theme, style),
+        ...themeVars(theme, dark, style),
     } as React.CSSProperties;
 
     return (
@@ -80,8 +81,8 @@ function positionFor(geometry: AssistantGeometry, dockHint: "left" | "right" | "
     return { left: geometry.x, top: geometry.y, width: geometry.w, height: geometry.h };
 }
 
-/** 画布主题 token + 外观偏好 → CSS 变量集合。 */
-function themeVars(theme: (typeof canvasThemes)[keyof typeof canvasThemes], style: { accent: string; glass: number }) {
+/** 画布主题 token + 外观偏好 → CSS 变量集合；强调色直接跟随应用主题主色（单色系）。 */
+function themeVars(theme: (typeof canvasThemes)[keyof typeof canvasThemes], dark: boolean, style: { glass: number }) {
     return {
         "--ai-bg": theme.toolbar.panel,
         "--ai-soft": theme.node.fill,
@@ -89,7 +90,8 @@ function themeVars(theme: (typeof canvasThemes)[keyof typeof canvasThemes], styl
         "--ai-text": theme.node.text,
         "--ai-muted": theme.node.faint,
         "--ai-hover": theme.toolbar.itemHover,
-        "--ai-accent": style.accent,
+        "--ai-accent": dark ? "#fafafa" : "#171717",
+        "--ai-accent-text": dark ? "#171717" : "#fafafa",
         "--ai-glass": style.glass,
     } as React.CSSProperties;
 }
@@ -105,7 +107,13 @@ function AssistantHeader({ onDockHint, dockHint }: { onDockHint: (value: "left" 
 
     const onPointerDown = (event: React.PointerEvent) => {
         if ((event.target as HTMLElement).closest("button")) return;
-        drag.current = { startX: event.clientX, startY: event.clientY, originX: geometry.x, originY: geometry.y };
+        // 停靠态下按下即切回悬浮并锚定到当前实际位置：标题栏拖动随时可用，无需先双击。
+        const panel = (event.currentTarget as HTMLElement).closest(".ai-assistant") as HTMLElement | null;
+        const rect = panel?.getBoundingClientRect();
+        const originX = rect ? rect.x : geometry.x;
+        const originY = rect ? rect.y : geometry.y;
+        if (geometry.mode !== "float") setGeometry({ mode: "float", x: originX, y: originY });
+        drag.current = { startX: event.clientX, startY: event.clientY, originX, originY };
         setMagnetized(false);
         const onMove = (moveEvent: PointerEvent) => {
             const state = drag.current;
@@ -137,7 +145,7 @@ function AssistantHeader({ onDockHint, dockHint }: { onDockHint: (value: "left" 
             onPointerDown={onPointerDown}
             onDoubleClick={() => setGeometry({ mode: geometry.mode === "float" ? "right" : "float" })}
         >
-            <span className="ai-accent grid size-6 shrink-0 place-items-center rounded-lg text-white shadow-sm">
+            <span className="ai-accent grid size-6 shrink-0 place-items-center rounded-lg shadow-sm" style={{ color: "var(--ai-accent-text)" }}>
                 <Bot className="size-3.5" />
             </span>
             <span className="min-w-0 flex-1 truncate text-sm font-semibold" style={{ color: "var(--ai-text)" }}>{t("aiAssistant.title")}</span>
@@ -194,21 +202,6 @@ function AssistantStyleSettings() {
     return (
         <div className="space-y-4 text-xs">
             <div>
-                <div className="mb-2 font-medium">{t("aiAssistant.accentColor")}</div>
-                <div className="flex gap-2">
-                    {ASSISTANT_ACCENT_PRESETS.map((color) => (
-                        <button
-                            key={color}
-                            type="button"
-                            className={`size-6 rounded-full transition-transform hover:scale-110 ${style.accent === color ? "ring-2 ring-offset-2 ring-stone-400 dark:ring-offset-stone-900" : ""}`}
-                            style={{ background: color }}
-                            aria-label={color}
-                            onClick={() => setStyle({ accent: color })}
-                        />
-                    ))}
-                </div>
-            </div>
-            <div>
                 <div className="mb-1 font-medium">{t("aiAssistant.glass")}</div>
                 <Slider min={0} max={90} value={style.glass} onChange={(value) => setStyle({ glass: value as number })} tooltip={{ formatter: (value) => `${value}%` }} className="!my-1" />
             </div>
@@ -223,12 +216,13 @@ function AssistantStyleSettings() {
 /** 悬浮球：可拖动 + 左右磁吸 + 点击展开。 */
 function AssistantFab() {
     const { t } = useTranslation();
+    const dark = useThemeStore((state) => state.theme) === "dark";
+    const theme = canvasThemes[dark ? "dark" : "light"];
     const geometry = useAiAssistantStore((state) => state.geometry);
     const style = useAiAssistantStore((state) => state.style);
     const busy = useAiAssistantStore((state) => state.busy);
     const setGeometry = useAiAssistantStore((state) => state.setGeometry);
     const open = useAiAssistantStore((state) => state.open);
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const drag = useRef<{ startX: number; startY: number; originX: number; originY: number; moved: boolean } | null>(null);
     const defaulted = !geometry.fabX && !geometry.fabY;
     const position = defaulted
@@ -260,8 +254,8 @@ function AssistantFab() {
     return (
         <button
             type="button"
-            className={`ai-accent fixed z-[95] grid place-items-center rounded-full text-white shadow-lg transition-transform hover:scale-110 active:scale-95 ${busy ? "animate-pulse" : ""}`}
-            style={{ ...position, width: FAB_SIZE, height: FAB_SIZE, ...themeVars(theme, style) }}
+            className={`ai-accent fixed z-[95] grid place-items-center rounded-full shadow-lg transition-transform hover:scale-110 active:scale-95 ${busy ? "animate-pulse" : ""}`}
+            style={{ ...position, width: FAB_SIZE, height: FAB_SIZE, color: "var(--ai-accent-text)", ...themeVars(theme, dark, style) }}
             onPointerDown={onPointerDown}
             aria-label={t("aiAssistant.open")}
             title={t("aiAssistant.open")}
@@ -334,13 +328,118 @@ function DockEdge() {
     );
 }
 
+/** 输入区：上缘高度手柄 + 文本模型选择 + 输入框与发送。 */
+function InputBar({ draft, setDraft, streaming, messages, onSend, onStop, onClear }: {
+    draft: string;
+    setDraft: (value: string) => void;
+    streaming: boolean;
+    messages: AssistantMessage[];
+    onSend: () => void;
+    onStop: () => void;
+    onClear: () => void;
+}) {
+    const { t } = useTranslation();
+    const inputHeight = useAiAssistantStore((state) => state.style.inputHeight);
+    const setStyle = useAiAssistantStore((state) => state.setStyle);
+    const selectedModel = useAiAssistantStore((state) => state.style.model);
+    const config = useConfigStore((state) => state.config);
+    const drag = useRef<number | null>(null);
+
+    const modelOptions = useMemo(() => selectableModelsByCapability(config, "text").map((value) => ({
+        value,
+        label: modelOptionLabel(config, value) || value,
+    })), [config]);
+    const activeModel = selectedModel || config.model || config.textModel;
+
+    const onHandleDown = (event: React.PointerEvent) => {
+        drag.current = event.clientY;
+        const onMove = (moveEvent: PointerEvent) => {
+            const start = drag.current;
+            if (start === null) return;
+            const next = Math.min(300, Math.max(44, inputHeight + (start - moveEvent.clientY)));
+            setStyle({ inputHeight: next });
+            drag.current = moveEvent.clientY;
+        };
+        const onUp = () => {
+            drag.current = null;
+            window.removeEventListener("pointermove", onMove);
+            window.removeEventListener("pointerup", onUp);
+        };
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", onUp);
+    };
+
+    return (
+        <div className="shrink-0 border-t" style={{ borderColor: "var(--ai-border)" }}>
+            <div
+                className="group flex h-2 cursor-ns-resize items-center justify-center"
+                onPointerDown={onHandleDown}
+                role="separator"
+                aria-orientation="horizontal"
+                aria-label={t("aiAssistant.inputResize")}
+                title={t("aiAssistant.inputResize")}
+            >
+                <span className="h-0.5 w-10 rounded-full transition-all group-hover:w-16" style={{ background: "var(--ai-border)" }} />
+            </div>
+            <div className="flex items-center justify-between gap-2 px-3 pb-1">
+                <Select
+                    size="small"
+                    variant="borderless"
+                    showSearch
+                    optionFilterProp="label"
+                    value={activeModel || undefined}
+                    placeholder={t("aiAssistant.modelPlaceholder")}
+                    options={modelOptions}
+                    onChange={(value) => setStyle({ model: value === activeModel && !selectedModel ? "" : value })}
+                    onClear={() => setStyle({ model: "" })}
+                    allowClear
+                    popupMatchSelectWidth={false}
+                    className="ai-model-select min-w-0 flex-1 !text-xs"
+                    suffixIcon={<span className="text-[10px]" style={{ color: "var(--ai-muted)" }}>{t("aiAssistant.model")}</span>}
+                    aria-label={t("aiAssistant.model")}
+                />
+                <Button type="text" size="small" className="!size-7 !min-w-7 !p-0" icon={<Eraser className="size-3.5" />} style={{ color: "var(--ai-muted)" }} onClick={onClear} disabled={!messages.length || streaming} aria-label={t("aiAssistant.clear")} title={t("aiAssistant.clear")} />
+            </div>
+            <div className="flex items-end gap-2 px-2 pb-2">
+                <textarea
+                    className="flex-1 resize-none rounded-xl border bg-transparent px-3 py-2 text-sm outline-none transition"
+                    style={{ borderColor: "var(--ai-border)", color: "var(--ai-text)", height: inputHeight }}
+                    value={draft}
+                    placeholder={t("aiAssistant.placeholder")}
+                    onChange={(event) => setDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                        if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                            event.preventDefault();
+                            onSend();
+                        }
+                    }}
+                />
+                {streaming ? (
+                    <Button type="primary" danger size="small" className="!h-9 !w-9 !min-w-9 !rounded-xl !p-0" icon={<CircleStop className="size-4" />} onClick={onStop} aria-label={t("aiAssistant.stop")} title={t("aiAssistant.stop")} />
+                ) : (
+                    <button
+                        type="button"
+                        className="ai-accent grid size-9 shrink-0 place-items-center rounded-xl shadow-sm transition hover:brightness-110 active:scale-95 disabled:opacity-40"
+                        style={{ color: "var(--ai-accent-text)" }}
+                        disabled={!draft.trim()}
+                        onClick={onSend}
+                        aria-label={t("aiAssistant.send")}
+                        title={t("aiAssistant.send")}
+                    >
+                        <Send className="size-4" />
+                    </button>
+                )}
+            </div>
+        </div>
+    );
+}
+
 /** 对话区：流式消息 + 工具卡片 + 输入框 + 工具循环。 */
 function AssistantChat() {
     const { t } = useTranslation();
     const navigate = useNavigate();
     const { message: toast } = App.useApp();
     const compact = useAiAssistantStore((state) => state.style.compact);
-    const accent = useAiAssistantStore((state) => state.style.accent);
     const messages = useAiAssistantStore((state) => state.messages);
     const streaming = useAiAssistantStore((state) => state.streaming);
     const addMessage = useAiAssistantStore((state) => state.addMessage);
@@ -375,7 +474,10 @@ function AssistantChat() {
         setBusy(true);
         abortRef.current = new AbortController();
         try {
-            const config = useConfigStore.getState().config;
+            // 助手选定了模型时覆盖全局配置;空串跟随全局。
+            const globalConfig = useConfigStore.getState().config;
+            const chosenModel = useAiAssistantStore.getState().style.model;
+            const config = chosenModel ? { ...globalConfig, model: chosenModel } : globalConfig;
             for (let round = 1; round <= ASSISTANT_TOOL_ROUND_LIMIT; round += 1) {
                 const systemPrompt = buildAssistantSystemPrompt({ canvasSnapshot: useBridgeStore.getState().canvasContext?.snapshot || null, applyOps: toolContext.applyOps, navigate });
                 const assistantId = randomId();
@@ -421,7 +523,7 @@ function AssistantChat() {
                 {messages.length === 0 ? (
                     <div className="grid h-full place-items-center px-6 text-center text-xs" style={{ color: "var(--ai-muted)" }}>
                         <div className="space-y-2">
-                            <span className="ai-accent mx-auto grid size-10 place-items-center rounded-2xl text-white shadow">
+                            <span className="ai-accent mx-auto grid size-10 place-items-center rounded-2xl shadow" style={{ color: "var(--ai-accent-text)" }}>
                                 <Bot className="size-5" />
                             </span>
                             <p>{t("aiAssistant.emptyHint")}</p>
@@ -429,55 +531,32 @@ function AssistantChat() {
                     </div>
                 ) : null}
                 {messages.map((item) => (
-                    <AssistantBubble key={item.id} message={item} bubbleClass={bubble} accent={accent} />
+                    <AssistantBubble key={item.id} message={item} bubbleClass={bubble} />
                 ))}
             </div>
-            <div className="flex shrink-0 items-end gap-2 border-t p-2" style={{ borderColor: "var(--ai-border)" }}>
-                <Button type="text" size="small" className="!size-8 !min-w-8 !p-0" icon={<Eraser className="size-4" />} style={{ color: "var(--ai-muted)" }} onClick={clearMessages} disabled={!messages.length || streaming} aria-label={t("aiAssistant.clear")} title={t("aiAssistant.clear")} />
-                <textarea
-                    className="max-h-32 min-h-9 flex-1 resize-none rounded-xl border bg-transparent px-3 py-2 text-sm outline-none transition"
-                    style={{ borderColor: "var(--ai-border)", color: "var(--ai-text)" }}
-                    rows={1}
-                    value={draft}
-                    placeholder={t("aiAssistant.placeholder")}
-                    onChange={(event) => setDraft(event.target.value)}
-                    onKeyDown={(event) => {
-                        if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                            event.preventDefault();
-                            void send();
-                        }
-                    }}
-                />
-                {streaming ? (
-                    <Button type="primary" danger size="small" className="!h-9 !w-9 !min-w-9 !rounded-xl !p-0" icon={<CircleStop className="size-4" />} onClick={() => abortRef.current?.abort()} aria-label={t("aiAssistant.stop")} title={t("aiAssistant.stop")} />
-                ) : (
-                    <button
-                        type="button"
-                        className="ai-accent grid size-9 shrink-0 place-items-center rounded-xl text-white shadow-sm transition hover:brightness-110 active:scale-95 disabled:opacity-40"
-                        style={{ "--ai-accent": accent } as React.CSSProperties}
-                        disabled={!draft.trim()}
-                        onClick={() => void send()}
-                        aria-label={t("aiAssistant.send")}
-                        title={t("aiAssistant.send")}
-                    >
-                        <Send className="size-4" />
-                    </button>
-                )}
-            </div>
+            <InputBar
+                draft={draft}
+                setDraft={setDraft}
+                streaming={streaming}
+                messages={messages}
+                onSend={() => void send()}
+                onStop={() => abortRef.current?.abort()}
+                onClear={clearMessages}
+            />
         </>
     );
 }
 
-function AssistantBubble({ message, bubbleClass, accent }: { message: AssistantMessage; bubbleClass: string; accent: string }) {
+function AssistantBubble({ message, bubbleClass }: { message: AssistantMessage; bubbleClass: string }) {
     const { t } = useTranslation();
     const compact = useAiAssistantStore((state) => state.style.compact);
     const softStyle = { background: "var(--ai-soft)", color: "var(--ai-text)", borderColor: "var(--ai-border)" } as React.CSSProperties;
 
     if (message.role === "tool") {
         return (
-            <div className="rounded-xl border py-2 pl-3 pr-3" style={{ ...softStyle, borderLeft: `3px solid ${accent}`, background: "var(--ai-bg)" }} aria-label={message.tool}>
+            <div className="rounded-xl border py-2 pl-3 pr-3" style={{ ...softStyle, borderLeft: "3px solid var(--ai-accent)", background: "var(--ai-bg)" }} aria-label={message.tool}>
                 <div className="mb-1 flex items-center gap-1.5 font-medium" style={{ color: "var(--ai-text)" }}>
-                    <span className={`size-1.5 rounded-full ${message.error ? "bg-red-500" : message.result !== undefined ? "bg-emerald-500" : "animate-pulse"}`} style={message.error || message.result !== undefined ? undefined : { background: accent }} />
+                    <span className={`size-1.5 rounded-full ${message.error ? "bg-red-500" : message.result !== undefined ? "bg-emerald-500" : "animate-pulse"}`} style={message.error || message.result !== undefined ? undefined : { background: "var(--ai-accent)" }} />
                     <span className="font-mono">{message.tool}</span>
                     {message.error ? <span className="text-red-500">{t("aiAssistant.toolFailed")}</span> : message.result !== undefined ? <span className="text-emerald-500">{t("aiAssistant.toolDone")}</span> : <span className="animate-pulse">{t("aiAssistant.toolRunning")}</span>}
                 </div>
@@ -489,13 +568,13 @@ function AssistantBubble({ message, bubbleClass, accent }: { message: AssistantM
     if (message.role === "user") {
         return (
             <div className="flex justify-end">
-                <div className={`ai-msg-user max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md text-white shadow-sm ${bubbleClass}`}>{message.text}</div>
+                <div className={`ai-msg-user max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md shadow-sm ${bubbleClass}`}>{message.text}</div>
             </div>
         );
     }
     return (
         <div className="flex justify-start gap-2">
-            <span className="ai-accent mt-1 grid size-6 shrink-0 place-items-center rounded-lg text-white shadow-sm">
+            <span className="ai-accent mt-1 grid size-6 shrink-0 place-items-center rounded-lg shadow-sm" style={{ color: "var(--ai-accent-text)" }}>
                 <Bot className="size-3.5" />
             </span>
             <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-bl-md border shadow-sm" style={{ ...softStyle, background: "var(--ai-bg)" }}>
@@ -503,7 +582,7 @@ function AssistantBubble({ message, bubbleClass, accent }: { message: AssistantM
                     {message.text || (
                         <span className="inline-flex items-center gap-1 py-1">
                             {[0, 1, 2].map((index) => (
-                                <span key={index} className="size-1.5 animate-bounce rounded-full" style={{ background: accent, animationDelay: `${index * 120}ms` }} />
+                                <span key={index} className="size-1.5 animate-bounce rounded-full" style={{ background: "var(--ai-accent)", animationDelay: `${index * 120}ms` }} />
                             ))}
                         </span>
                     )}

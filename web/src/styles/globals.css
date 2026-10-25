@@ -636,5 +636,9 @@
     box-shadow: 0 6px 20px -6px color-mix(in srgb, var(--ai-accent, #6366f1) 55%, transparent);
 }
 .ai-msg-user {
-    background-image: linear-gradient(135deg, color-mix(in srgb, var(--ai-accent, #6366f1) 90%, white), color-mix(in srgb, var(--ai-accent, #6366f1) 92%, black));
+    background-image: linear-gradient(135deg, color-mix(in srgb, var(--ai-accent) 88%, white), color-mix(in srgb, var(--ai-accent) 94%, black));
+    color: var(--ai-accent-text);
+}
+.ai-model-select .ant-select-selection-item {
+    font-size: 12px;
 }

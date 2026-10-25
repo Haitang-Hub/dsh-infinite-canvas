@@ -22,9 +22,13 @@ export type AssistantGeometry = {
 };
 
 export type AssistantStyle = {
-    accent: string;
+    /** 毛玻璃透明度（0-90）。 */
     glass: number;
     compact: boolean;
+    /** 输入区高度（px）。 */
+    inputHeight: number;
+    /** 对话使用的文本模型；空串表示跟随全局配置。 */
+    model: string;
 };
 
 export type AssistantMessage =
@@ -35,14 +39,11 @@ export type AssistantMessage =
 
 const GEOMETRY_KEY = "ai-assistant-geometry";
 const STYLE_KEY = "ai-assistant-style";
-const ACCENT_PRESETS = ["#6366f1", "#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ec4899", "#e11d48"];
 const DEFAULT_GEOMETRY: AssistantGeometry = { mode: "minimized", x: 0, y: 0, w: 430, h: 580, dockThickness: 380, fabX: 0, fabY: 0 };
-const DEFAULT_STYLE: AssistantStyle = { accent: "#6366f1", glass: 20, compact: false };
+const DEFAULT_STYLE: AssistantStyle = { glass: 20, compact: false, inputHeight: 76, model: "" };
 
 /** 单轮对话工具执行循环上限。 */
 export const ASSISTANT_MAX_TOOL_ROUNDS = 8;
-export const ASSISTANT_ACCENT_PRESETS = ACCENT_PRESETS;
-
 function persisted<T>(key: string, base: T, isValid: (value: T) => T): T {
     try {
         const raw = localStorage.getItem(key);
@@ -70,8 +71,9 @@ function loadGeometry() {
 
 function loadStyle() {
     return persisted(STYLE_KEY, DEFAULT_STYLE, (value) => {
-        if (!ACCENT_PRESETS.includes(value.accent)) value.accent = DEFAULT_STYLE.accent;
         value.glass = Math.min(90, Math.max(0, Number(value.glass) || 0));
+        value.inputHeight = Math.min(300, Math.max(44, Number(value.inputHeight) || DEFAULT_STYLE.inputHeight));
+        if (typeof value.model !== "string") value.model = "";
         return value;
     });
 }
