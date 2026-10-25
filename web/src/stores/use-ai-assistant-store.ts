@@ -63,6 +63,22 @@ function loadGeometry() {
     // 旧版本持久化里可能存在 left/right/bottom 停靠模式，统一回落为悬浮。
     return persisted(GEOMETRY_KEY, DEFAULT_GEOMETRY, (value) => {
         if (value.mode !== "float" && value.mode !== "minimized") value.mode = "minimized";
+        // 坐标可能来自更大的视口：加载时夹取回当前视口，避免面板落在屏幕外。
+        if (typeof window !== "undefined") {
+            value.w = Math.min(value.w, window.innerWidth - 16);
+            value.h = Math.min(value.h, window.innerHeight - 16);
+            value.x = Math.min(Math.max(0, value.x), Math.max(0, window.innerWidth - value.w));
+            value.y = Math.min(Math.max(0, value.y), Math.max(0, window.innerHeight - value.h));
+            if (!value.x && !value.y) {
+                value.x = Math.max(16, window.innerWidth - value.w - 28);
+                value.y = Math.max(16, window.innerHeight - value.h - 88);
+            }
+            if (value.fabX || value.fabY) {
+                const size = 52;
+                value.fabX = Math.min(Math.max(0, value.fabX), Math.max(0, window.innerWidth - size));
+                value.fabY = Math.min(Math.max(0, value.fabY), Math.max(0, window.innerHeight - size));
+            }
+        }
         return value;
     });
 }
