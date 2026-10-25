@@ -67,7 +67,7 @@ function AssistantWindow({ children }: { children: React.ReactNode }) {
             style={{ ...windowStyle, ...(docked ? borderSide : {}) }}
         >
             {children}
-            {!docked ? <ResizeCorner /> : null}
+            {docked ? <DockEdge mode={geometry.mode as "left" | "right" | "bottom"} /> : <ResizeCorner />}
         </div>
     );
 }
@@ -115,7 +115,8 @@ function AssistantHeader() {
             drag.current = null;
             if (state) {
                 const side = dockSideFromPointer(upEvent.clientX, upEvent.clientY);
-                if (side) setGeometry({ mode: side });
+                if (side === "bottom") setGeometry({ mode: "bottom", h: Math.min(geometry.h, 420) });
+                else if (side) setGeometry({ mode: side });
             }
             window.removeEventListener("pointermove", onMove);
             window.removeEventListener("pointerup", onUp);
@@ -217,6 +218,42 @@ function AssistantFab() {
         >
             <Bot className="size-6" />
         </button>
+    );
+}
+
+/** 停靠态内边缘拖动调尺寸：左/右停靠调宽度，底部停靠调高度（窗口级监听，合成输入同样可用）。 */
+function DockEdge({ mode }: { mode: "left" | "right" | "bottom" }) {
+    const geometry = useAiAssistantStore((state) => state.geometry);
+    const setGeometry = useAiAssistantStore((state) => state.setGeometry);
+    const horizontal = mode === "bottom";
+    const edgeStyle: React.CSSProperties = horizontal
+        ? { top: 0, left: 0, right: 0, height: 6, cursor: "ns-resize" }
+        : mode === "left"
+            ? { top: 0, bottom: 0, right: 0, width: 6, cursor: "ew-resize" }
+            : { top: 0, bottom: 0, left: 0, width: 6, cursor: "ew-resize" };
+    return (
+        <span
+            className="absolute z-10"
+            style={edgeStyle}
+            onPointerDown={(event) => {
+                const start = horizontal ? event.clientY : event.clientX;
+                const startSize = horizontal ? geometry.h : geometry.w;
+                const onMove = (moveEvent: PointerEvent) => {
+                    const delta = (horizontal ? moveEvent.clientY : moveEvent.clientX) - start;
+                    // 左停靠向右增宽；右停靠向左增宽；底部向上增高。
+                    const size = mode === "left" ? startSize + delta : startSize - delta;
+                    if (horizontal) setGeometry({ h: Math.min(Math.max(200, size), Math.floor(window.innerHeight * 0.7)) });
+                    else setGeometry({ w: Math.min(Math.max(280, size), Math.min(Math.floor(window.innerWidth * 0.7), 720)) });
+                };
+                const onUp = () => {
+                    window.removeEventListener("pointermove", onMove);
+                    window.removeEventListener("pointerup", onUp);
+                };
+                window.addEventListener("pointermove", onMove);
+                window.addEventListener("pointerup", onUp);
+            }}
+            aria-hidden
+        />
     );
 }
 
