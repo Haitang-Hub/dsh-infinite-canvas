@@ -619,37 +619,22 @@
     font-size: 0.75rem;
 }
 
-/* ===== 内置 Agent 悬浮面板外观 ===== */
-/* 强调色与毛玻璃强度由面板根节点以 CSS 变量注入;颜色用 color-mix 按透明度混合背景。 */
-.agent-panel {
-    --agent-bg: #ffffff;
-    --agent-bg-soft: #fafaf9;
-    --agent-border: rgba(120, 113, 108, 0.22);
-    --agent-shadow: 0 24px 64px -16px rgba(28, 25, 23, 0.35);
+/* ===== AI 助手悬浮面板（配色全部来自画布主题 token 注入的 CSS 变量） ===== */
+.ai-assistant {
+    background: color-mix(in srgb, var(--ai-bg) calc(100% - var(--ai-glass, 20) * 0.9%), transparent);
+    backdrop-filter: blur(calc(8px + var(--ai-glass, 20) * 0.25px));
+    -webkit-backdrop-filter: blur(calc(8px + var(--ai-glass, 20) * 0.25px));
+    color: var(--ai-text);
+    box-shadow: 0 24px 64px -14px rgba(0, 0, 0, 0.4);
 }
-.dark .agent-panel {
-    --agent-bg: #1c1917;
-    --agent-bg-soft: #292524;
-    --agent-border: rgba(168, 162, 158, 0.2);
-    --agent-shadow: 0 24px 64px -12px rgba(0, 0, 0, 0.6);
+/* 磁吸激活时启用位置过渡，产生"被吸住"的回弹手感；自由拖动时不加过渡保持跟手。 */
+.ai-assistant.ai-magnet {
+    transition: left 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2), top 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2);
 }
-.agent-panel {
-    background: color-mix(in srgb, var(--agent-bg) calc(100% - var(--agent-glass, 25) * 1%), transparent);
-    backdrop-filter: blur(calc(10px + var(--agent-glass, 25) * 0.3px));
-    -webkit-backdrop-filter: blur(calc(10px + var(--agent-glass, 25) * 0.3px));
+.ai-accent {
+    background-image: linear-gradient(135deg, color-mix(in srgb, var(--ai-accent, #6366f1) 80%, white), color-mix(in srgb, var(--ai-accent, #6366f1) 86%, black));
+    box-shadow: 0 6px 20px -6px color-mix(in srgb, var(--ai-accent, #6366f1) 55%, transparent);
 }
-.agent-panel-soft {
-    background: color-mix(in srgb, var(--agent-bg-soft) calc(100% - var(--agent-glass, 25) * 0.7%), transparent);
-}
-.agent-accent-grad {
-    background-image: linear-gradient(135deg, color-mix(in srgb, var(--agent-accent, #6366f1) 82%, white), color-mix(in srgb, var(--agent-accent, #6366f1) 86%, black));
-}
-.agent-fab-ring {
-    box-shadow: 0 10px 30px -6px color-mix(in srgb, var(--agent-accent, #6366f1) 55%, transparent);
-}
-.agent-panel .agent-msg-user {
-    background-image: linear-gradient(135deg, color-mix(in srgb, var(--agent-accent, #6366f1) 90%, white), color-mix(in srgb, var(--agent-accent, #6366f1) 92%, black));
-}
-.agent-panel .agent-tool-stripe {
-    border-left: 3px solid var(--agent-accent, #6366f1);
+.ai-msg-user {
+    background-image: linear-gradient(135deg, color-mix(in srgb, var(--ai-accent, #6366f1) 90%, white), color-mix(in srgb, var(--ai-accent, #6366f1) 92%, black));
 }

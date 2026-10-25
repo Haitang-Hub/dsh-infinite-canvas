@@ -8,7 +8,7 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useBridgeStore } from "@/stores/use-bridge-store";
-import { useOpenBuiltinAgent } from "@/components/agent-panel/builtin-agent-panel";
+import { useOpenAiAssistant } from "@/components/ai-assistant/ai-assistant";
 import { DOCS_URL } from "@/constant/env";
 
 export function CanvasTopBar({
@@ -176,11 +176,11 @@ function CompactBridgeStatus() {
     const { t } = useTranslation();
     const connected = useBridgeStore((state) => state.connected);
     const executing = useBridgeStore((state) => state.executing);
-    const openBuiltinAgent = useOpenBuiltinAgent();
+    const openAiAssistant = useOpenAiAssistant();
     const label = t(executing ? "agent.status.executing" : connected ? "canvas.agentConnected" : "canvas.agentDisconnected");
     const dotColor = executing ? "#f59e0b" : connected ? "#22c55e" : theme.node.muted;
     return (
-        <button type="button" className="flex h-8 cursor-pointer items-center gap-1.5 text-xs transition hover:opacity-75" style={{ color: executing ? "#d97706" : connected ? "#16a34a" : theme.node.muted }} title={t("canvas.bridgeStatus")} aria-label={label} onClick={openBuiltinAgent}>
+        <button type="button" className="flex h-8 cursor-pointer items-center gap-1.5 text-xs transition hover:opacity-75" style={{ color: executing ? "#d97706" : connected ? "#16a34a" : theme.node.muted }} title={t("canvas.bridgeStatus")} aria-label={label} onClick={openAiAssistant}>
             <span className={`size-2 rounded-full ${executing ? "animate-pulse" : ""}`} style={{ background: dotColor }} />
             <span className="max-w-[140px] truncate">{label}</span>
         </button>

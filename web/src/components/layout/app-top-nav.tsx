@@ -10,7 +10,7 @@ import { MobileNavDrawer } from "@/components/layout/mobile-nav-drawer";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { cn } from "@/lib/utils";
 import { useBridgeStore } from "@/stores/use-bridge-store";
-import { useOpenBuiltinAgent } from "@/components/agent-panel/builtin-agent-panel";
+import { useOpenAiAssistant } from "@/components/ai-assistant/ai-assistant";
 
 export function AppTopNav() {
     const { t } = useTranslation();
@@ -18,7 +18,7 @@ export function AppTopNav() {
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
     const connected = useBridgeStore((state) => state.connected);
     const executing = useBridgeStore((state) => state.executing);
-    const openBuiltinAgent = useOpenBuiltinAgent();
+    const openAiAssistant = useOpenAiAssistant();
     const hideHeader = /^\/canvas\/[^/]+/.test(pathname);
     const slug = pathname.split("/").filter(Boolean)[0];
     const activeToolSlug = navigationTools.some((tool) => tool.slug === slug) ? (slug as NavigationToolSlug) : undefined;
@@ -79,7 +79,7 @@ export function AppTopNav() {
                                 executing={executing}
                                 label={t(executing ? "agent.status.executing" : connected ? "agent.status.connected" : "agent.status.disconnected")}
                                 tooltip={t(executing ? "agent.status.executingTooltip" : connected ? "agent.status.connectedTooltip" : "agent.status.disconnectedTooltip")}
-                                onClick={openBuiltinAgent}
+                                onClick={openAiAssistant}
                             />
                             <UserStatusActions />
                         </div>
