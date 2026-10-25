@@ -43,12 +43,12 @@ import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/a
 import { CanvasSidePanel } from "@/components/canvas/canvas-side-panel";
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
+import { directorDeskBaseUrl } from "@/lib/agent/director-plugin";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
 import { usePluginHost } from "@/pages/canvas/hooks/use-plugin-host";
 import { buildNodeMentionReferences, getGroupResourceNodes, isCanvasReferenceNode, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { exportCanvasProjects } from "@/lib/canvas/canvas-export";
 import { applyNodeConfigPatch, audioMetadata, buildAudioGenerationMetadata, buildImageGenerationMetadata, createCanvasNode, imageMetadata, videoMetadata } from "@/lib/canvas/canvas-node-factory";
-import { createDirectorDeskRecord, ensureDirectorDeskRecords, writeDirectorDeskRecords } from "@/pages/director/editor/workspaces/directorDeskRegistry";
 import { applyGroupSelection, applyUngroupSelection, canGroupSelectedNodes, canUngroupSelectedNodes, collectGroupMemberNodes, findContainingGroupId, findGroupDropTarget, getConnectionTargetAnchor, getGroupWrapRect, normalizeConnection, snapNodesIntoGroup } from "@/lib/canvas/canvas-node-geometry";
 import { focusViewportForNode, type FocusFrame } from "@/lib/canvas/canvas-node-geometry";
 import {
@@ -834,14 +834,9 @@ function InfiniteCanvasPage() {
                           size: effectiveConfig.size,
                           count: getGenerationCount(effectiveConfig.canvasImageCount || effectiveConfig.count),
                       }
-                    : // 每个导演台节点绑定一个新建的导演台实例，节点上保留编号便于下次直达。
+                    : // 导演台由独立插件（3d-director-desk）提供；节点仅生成关联实例 ID 作为链接锚点。
                       type === CanvasNodeType.Director
-                      ? (() => {
-                            const records = ensureDirectorDeskRecords();
-                            const record = createDirectorDeskRecord(records);
-                            writeDirectorDeskRecords([...records, record]);
-                            return { directorDeskId: record.id, directorDeskName: record.name };
-                        })()
+                      ? { directorDeskId: `desk-${crypto.randomUUID()}` }
                       : undefined;
             const newNode = createCanvasNode(type, targetPosition, configMetadata);
 
@@ -3099,10 +3094,11 @@ function InfiniteCanvasPage() {
     }, []);
 
     const handleOpenDirectorDesk = useCallback(
-        (deskId: string, nodeId: string) => {
-            navigate(`/director/editor?instanceId=${encodeURIComponent(deskId)}&fromCanvas=${encodeURIComponent(projectId)}&fromNode=${encodeURIComponent(nodeId)}`);
+        (deskId: string, _nodeId: string) => {
+            // 打开外部导演台插件（3d-director-desk）中对应的实例；插件地址可经 config.js 的 directorDeskUrl 覆盖。
+            window.open(`${directorDeskBaseUrl()}/director/editor?instanceId=${encodeURIComponent(deskId)}`, "_blank", "noopener");
         },
-        [navigate, projectId],
+        [],
     );
 
     const renderNodePanel = useCallback(

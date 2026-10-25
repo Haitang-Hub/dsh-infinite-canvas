@@ -8,8 +8,10 @@
 | 角色 | 说明 |
 | ---- | ---- |
 | 桥服务（bridge） | canvas-agent 常驻 HTTP 进程（`http://127.0.0.1:17371`），仅监听本机回环 |
-| 画布执行器（canvas executor） | 打开画布页的浏览器标签页，执行 `canvas_*` / `site_*` / 工作台工具 |
-| 导演台执行器（director executor） | `/director/editor` 页面（画布页隐藏 iframe 或独立标签），执行 `stage_*` / `camera_*` / `preview_*` |
+| 画布执行器（canvas executor） | 打开画布页的浏览器标签页，执行 `canvas_*` / `site_*` / 工作台 / `shot_*` 工具 |
+
+> 3d-director-desk 插件（独立项目）有自己的桥（17372）与导演台执行器，协议镜像见其仓库；
+> 本桥（17371）不路由 `stage_*` / `camera_*` / `preview_*` 工具。
 | MCP 进程 | `canvas-agent mcp`（stdio），把 MCP 工具调用 POST 到桥服务 `/api/tools` |
 
 ## 协议版本
@@ -25,10 +27,10 @@
 1. **配置发现**：`GET /bootstrap`（免 token，本机回环）→ `{ ok, protocolVersion, url, token }`。
    页面 localStorage 已有 token 时跳过。token 同时落盘 `~/.infinite-canvas/canvas-agent.json`
    与 `~/.infinite-canvas/token`。
-2. **SSE 订阅**：`GET /events?token=&clientId=&role=canvas|director&dv=&desk=`。
+2. **SSE 订阅**：`GET /events?token=&clientId=&role=canvas|status`。
    - `role=canvas`：画布执行器；首个连接成为活跃工具目标。
-   - `role=director`：导演台执行器；`/director/ready` 上报就绪后参与路由。
    - `role=status`：只收事件的旁听连接，不参与路由。
+   - （历史兼容）`role=director` 连接被接受但不参与路由——导演台执行器已迁往独立插件桥。
 3. **hello 事件**：连接建立后服务端下发 `{ ok, protocolVersion, clientId }`。
 4. **心跳**：画布执行器每 15s `POST /canvas/heartbeat?clientId=`；超过 45s 无心跳视为
    失联（`executorOnline=false`）。服务端同时每 15s 下发 `ping` 事件保活。
@@ -37,10 +39,7 @@
 
 1. MCP / HTTP 客户端 → `POST /api/tools` `{ name, input }`（token 鉴权）。
 2. 桥校验工具名与 zod schema → 按工具类型路由：
-   - SITE_TOOLS（site_navigate、canvas_list_projects、工作台、素材等）→ 画布执行器
-     （无画布在线时回落到就绪的导演台执行器）。
-   - DIRECTOR_TOOLS（stage_* / camera_* / preview_*）→ 已就绪的导演台执行器，
-     优先 deskId 匹配与最高 `dv` 版本。
+   - SITE_TOOLS（site_navigate、canvas_list_projects、工作台、素材等）→ 画布执行器。
    - 其余画布工具经 `buildCanvasToolRequest` 归一为 `canvas_apply_ops` 后下发。
 3. 执行器收到 SSE `tool_call` 事件 `{ requestId, name, input }`，执行后
    `POST /canvas/result?clientId=` `{ requestId, result }` 或 `{ requestId, error }`。
@@ -51,11 +50,10 @@
 - **执行器离线检测**：工具下发后 3s 内无在线执行器 → 结构化错误
   `{ error: "executor_offline", hint: "请先打开画布页面 http://localhost:5070..." }`。
   MCP 层以 `isError` 结果透出该结构。
-- **执行超时**：状态读取类 10s，导出/渲染类（preview_render_frame / preview_export_animatic）300s，
-  其余默认 30s；超时返回 `tool_timeout`。
+- **执行超时**：状态读取类 10s，其余默认 30s；超时返回 `tool_timeout`。
 - **FIFO 串行**：同一执行器的多个 tool_call 按到达顺序排队执行，避免画布状态竞态。
 - **错误码**：`executor_offline` / `executor_disconnected` / `tool_timeout` /
-  `bridge_offline` / `director_not_ready` / `canvas_not_ready` / `unknown_tool`。
+  `bridge_offline` / `canvas_not_ready` / `unknown_tool`。
 
 ## 快照与状态
 

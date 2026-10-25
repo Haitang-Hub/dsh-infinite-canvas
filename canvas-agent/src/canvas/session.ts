@@ -12,7 +12,6 @@ import type { CanvasSnapshot } from "./types.js";
 const SITE_TOOLS = new Set<ToolName>([
     "site_navigate",
     "canvas_list_projects",
-    "stage_open",
     "workbench_image_get_config",
     "workbench_image_generate",
     "workbench_video_get_config",
@@ -31,9 +30,8 @@ const EXECUTOR_ONLINE_WAIT_MS = 3000;
 /** 心跳超过该时长视为执行器失联（执行器每 15s 上报一次）。 */
 const HEARTBEAT_STALE_MS = 45000;
 
-/** 按工具类别的执行超时：状态读取类 10s、导出/渲染类 300s、其余默认 30s。 */
+/** 按工具类别的执行超时：状态读取类 10s，其余默认 30s。 */
 const STATUS_TIMEOUT_MS = 10_000;
-const EXPORT_TIMEOUT_MS = 300_000;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const STATUS_TOOLS = new Set<ToolName>([
     "canvas_list_projects",
@@ -44,34 +42,10 @@ const STATUS_TOOLS = new Set<ToolName>([
     "workbench_video_get_config",
     "prompts_search",
     "assets_list",
-    "stage_get_state",
-    "camera_get_trajectory",
-]);
-const EXPORT_TOOLS = new Set<ToolName>(["preview_render_frame", "preview_export_animatic"]);
-
-/** 需要路由到导演台页面客户端的工具。 */
-const DIRECTOR_TOOLS = new Set<ToolName>([
-    "stage_list_presets",
-    "stage_get_state",
-    "stage_place_character",
-    "stage_place_prop",
-    "stage_update_object",
-    "stage_add_model",
-    "stage_clear_scene",
-    "stage_remove_object",
-    "camera_set_keyframe",
-    "camera_set_pose",
-    "camera_update_keyframe",
-    "camera_delete_keyframe",
-    "camera_apply_preset",
-    "camera_set_pacing",
-    "camera_get_trajectory",
-    "preview_render_frame",
-    "preview_export_animatic",
 ]);
 
 /** 删除类工具：桥侧记录审计日志（人在回路的确认由 harness 自身完成）。 */
-const DELETE_TOOLS = new Set<ToolName>(["canvas_delete_nodes", "shot_delete", "stage_clear_scene", "stage_remove_object", "camera_delete_keyframe"]);
+const DELETE_TOOLS = new Set<ToolName>(["canvas_delete_nodes", "shot_delete"]);
 
 /** 带结构化错误码的工具调用失败，MCP 层据此返回可引导用户的错误。 */
 export class BridgeToolError extends Error {
@@ -88,8 +62,6 @@ export class BridgeToolError extends Error {
 /** 管理浏览器执行器连接、画布状态快照与工具调用分发。 */
 export class CanvasSession {
     private clients = new Map<string, ServerResponse>();
-    private directorClients = new Map<string, { res: ServerResponse; version: number; deskId: string; ready: boolean }>();
-    private activeDeskId = "";
     private clientFocusOrder = new Map<string, number>();
     private pending = new Map<string, PendingRequest>();
     private canvasStates = new Map<string, CanvasSnapshot>();
@@ -116,7 +88,6 @@ export class CanvasSession {
             protocolVersion: AGENT_PROTOCOL_VERSION,
             hasCanvas: Boolean(this.canvasState),
             canvasClients: this.clients.size,
-            directorClients: [...this.directorClients.values()].filter((item) => item.ready).length,
             executorOnline: this.hasOnlineExecutor(),
         };
     }
@@ -140,19 +111,12 @@ export class CanvasSession {
         const role = url.searchParams.get("role") === "director" ? "director" : "canvas";
         logger.info("SSE client connected", { clientId, role, statusOnly });
         res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
-        if (!statusOnly) {
-            if (role === "director") {
-                // ready 由桥在编辑器完全加载后经 /director/ready 上报；未就绪的窗口不参与路由。
-                this.directorClients.set(clientId, { res, version: Number(url.searchParams.get("dv")) || 0, deskId: url.searchParams.get("desk") || "", ready: false });
-            }
-            else {
-                this.clients.set(clientId, res);
-                this.heartbeats.set(clientId, Date.now());
-                // 只有画布客户端可成为活跃工具目标；导演台客户端只接收导演台工具路由。
-                if (!this.activeClientId) {
-                    this.activeClientId = clientId;
-                    this.clientFocusOrder.set(clientId, ++this.focusSequence);
-                }
+        if (!statusOnly && role !== "director") {
+            this.clients.set(clientId, res);
+            this.heartbeats.set(clientId, Date.now());
+            if (!this.activeClientId) {
+                this.activeClientId = clientId;
+                this.clientFocusOrder.set(clientId, ++this.focusSequence);
             }
             if (!this.clientFocusOrder.has(clientId)) this.clientFocusOrder.set(clientId, 0);
         }
@@ -161,8 +125,7 @@ export class CanvasSession {
         res.on("close", () => {
             clearInterval(timer);
             logger.info("SSE client disconnected", { clientId, role, statusOnly });
-            if (statusOnly) return;
-            if (this.directorClients.get(clientId)?.res === res) this.directorClients.delete(clientId);
+            if (statusOnly || role === "director") return;
             if (this.clients.get(clientId) !== res) return;
             this.clients.delete(clientId);
             this.heartbeats.delete(clientId);
@@ -216,7 +179,6 @@ export class CanvasSession {
     /** 向全部已连接网页广播事件。 */
     emitAll(type: string, payload: unknown) {
         this.clients.forEach((client) => sendEvent(client, type, payload));
-        this.directorClients.forEach((item) => sendEvent(item.res, type, payload));
     }
 
     /** 校验工具参数并将调用分派到浏览器执行器。 */
@@ -236,10 +198,7 @@ export class CanvasSession {
     }
 
     private async dispatchTool(name: ToolName, input: Record<string, unknown>) {
-        if (DIRECTOR_TOOLS.has(name)) return await this.requestDirectorTool(name, input);
         if (SITE_TOOLS.has(name)) {
-            // 没有画布页面时允许落到导演台页面执行（导演台桥支持 site_navigate 返回画布），其余工具会得到明确错误。
-            if (!this.clients.size && this.directorClients.size) return await this.requestDirectorTool(name, input);
             await this.ensureExecutorOnline();
             return await this.requestCanvasTool(name, input);
         }
@@ -274,28 +233,6 @@ export class CanvasSession {
         return await this.requestClientTool(this.targetClientId, name, input);
     }
 
-    /** 向导演台页面发送工具请求并等待调用结果；只路由到已就绪的客户端，优先最近 stage_open 的导演台。 */
-    private async requestDirectorTool(name: ToolName, input: Record<string, unknown>) {
-        const entries = [...this.directorClients.entries()].filter(([, item]) => item.ready);
-        if (!entries.length) throw new BridgeToolError("director_not_ready", "导演台仍在后台加载中，请稍等几秒后重试（未就绪的页面不参与路由）", "先调用 stage_open 打开导演台，再重试本工具");
-        const active = entries.filter(([, item]) => item.deskId && item.deskId === this.activeDeskId);
-        const pool = active.length ? active : entries;
-        const latest = Math.max(...pool.map(([, item]) => item.version));
-        const entry = pool.filter(([, item]) => item.version === latest).pop();
-        if (!entry) throw new BridgeToolError("director_not_ready", "当前没有已连接的导演台页面");
-        return await this.requestClientTool(entry[0], name, input);
-    }
-
-    /** 导演台编辑器完全加载后的就绪上报；只有就绪的客户端参与工具路由。 */
-    markDirectorReady(clientId: string, deskId: string) {
-        const entry = this.directorClients.get(clientId);
-        if (!entry) return false;
-        this.directorClients.set(clientId, { ...entry, deskId: deskId || entry.deskId, ready: true });
-        if (deskId || entry.deskId) this.activeDeskId = deskId || entry.deskId;
-        logger.info("Director client ready", { clientId, deskId: deskId || entry.deskId });
-        return true;
-    }
-
     /** 向指定网页客户端发送工具请求并等待结果；请求先进入该客户端的 FIFO 队列，超时按工具类别区分。 */
     private async requestClientTool(clientId: string, name: ToolName, input: Record<string, unknown>) {
         const task = () => this.sendToolRequest(clientId, name, input);
@@ -307,11 +244,11 @@ export class CanvasSession {
 
     private async sendToolRequest(clientId: string, name: ToolName, input: Record<string, unknown>) {
         const requestId = crypto.randomUUID();
-        const client = this.clients.get(clientId) || this.directorClients.get(clientId)?.res;
+        const client = this.clients.get(clientId);
         if (!client) throw new BridgeToolError("executor_offline", "当前没有已连接画布", "请先打开画布页面 http://localhost:5070");
         sendEvent(client, "tool_call", { requestId, name, input });
         logger.debug("Canvas tool request sent", { requestId, name, clientId });
-        const timeoutMs = EXPORT_TOOLS.has(name) ? EXPORT_TIMEOUT_MS : STATUS_TOOLS.has(name) ? STATUS_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
+        const timeoutMs = STATUS_TOOLS.has(name) ? STATUS_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
         return await new Promise((resolve, reject) => {
             const timer = setTimeout(() => {
                 this.pending.delete(requestId);
@@ -346,8 +283,6 @@ function deletedTargets(name: ToolName, input: unknown): string[] | null {
     if (DELETE_TOOLS.has(name)) {
         const data = (input || {}) as { ids?: unknown; shotNodeIds?: unknown; objectId?: unknown; cameraId?: unknown; keyframeId?: unknown };
         const ids = [data.ids, data.shotNodeIds].flatMap((value) => Array.isArray(value) ? value.map(String) : []);
-        if (data.objectId) ids.push(String(data.objectId));
-        if (data.cameraId && data.keyframeId) ids.push(`${data.cameraId}/${data.keyframeId}`);
         return ids;
     }
     if (name === "canvas_apply_ops" && input && typeof input === "object") {

@@ -65,10 +65,6 @@ export function startHttpServer() {
         const ok = session.resolveResult(String(req.query.clientId || ""), req.body);
         res.status(ok ? 200 : 409).json({ ok });
     });
-    app.post("/director/ready", (req, res) => {
-        const ok = session.markDirectorReady(String(req.body?.clientId || ""), String(req.body?.deskId || ""));
-        res.status(ok ? 200 : 404).json({ ok });
-    });
     app.post("/api/tools", route(async (req, res) => res.json({ ok: true, result: await session.callTool(req.body?.name, req.body?.input || {}) })));
     app.use((_req, res) => res.status(404).json({ ok: false, error: "not found" }));
     app.use((error: Error, req: Request, res: Response, _next: NextFunction) => {

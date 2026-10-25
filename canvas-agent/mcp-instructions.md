@@ -12,9 +12,9 @@
 - **项目管理**：`canvas_list_projects`（列画布）、`site_navigate`（跳转页面）。
 - **画布操作**：`canvas_apply_ops` 是核心批量入口，op 类型包括 `add_node`、`update_node`、`delete_node`、`delete_connections`、`connect_nodes`、`set_viewport`、`select_nodes`、`run_generation`；另有 `canvas_create_text_node(s)`、`canvas_create_generation_flow`、`canvas_delete_nodes`、`canvas_connect_nodes` 等便捷封装，以及 `canvas_get_state` / `canvas_get_selection` / `canvas_export_snapshot` 读取类工具。
 - **生成**：`canvas_run_generation` 触发节点上的图像/视频/音频/文本生成（异步执行，用 `generation_get_status` 查询状态）。
-- **镜头**：`shot_create` / `shot_list` / `shot_update` / `shot_delete` / `shot_link` / `shot_fork` 管理视频编排镜头。
+- **镜头**：`shot_create` / `shot_list` / `shot_update` / `shot_delete` / `shot_link` / `shot_fork` 管理视频编排镜头（`deskId` 元数据关联导演台实例）。
+- **导演台**：`stage_*` / `camera_*` / `preview_*` 工具不在本 MCP 中——由独立的 3d-director-desk 插件提供（其自带 MCP 与桥服务）。画布上的"导演台节点"（nodeType=director，metadata.directorDeskId）是跨插件链接锚点：在导演台插件中用同一 deskId 打开实例即可协作。
 - **工作台与素材**：`workbench_image_*`、`workbench_video_*`、`prompts_search`、`assets_list`、`assets_add`。
-- **导演台**：`stage_*` / `camera_*` / `preview_*` 由 3D 导演台页面执行器执行，使用前先 `stage_open`。
 
 ## 操作建议
 

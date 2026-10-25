@@ -2,7 +2,6 @@ import { nanoid } from "nanoid";
 
 import i18n from "@/i18n";
 import { getNodeSpec, isRegisteredNodeType } from "@/lib/canvas/node-registry";
-import { createDirectorDeskRecord, ensureDirectorDeskRecords, writeDirectorDeskRecords } from "@/pages/director/editor/workspaces/directorDeskRegistry";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData, type CanvasNodeMetadata, type CanvasNodeTypeId, type ViewportTransform } from "@/types/canvas";
 
 export type CanvasAgentOp =
@@ -57,10 +56,8 @@ export function applyCanvasAgentOps(snapshot: CanvasAgentSnapshot, ops?: CanvasA
             };
             // Agent 建的导演台节点与手动创建一致：绑定一个真实导演台实例，保证后续 stage_open 可直达。
             if (nodeType === CanvasNodeType.Director && !node.metadata?.directorDeskId) {
-                const records = ensureDirectorDeskRecords();
-                const record = createDirectorDeskRecord(records);
-                writeDirectorDeskRecords([...records, record]);
-                node.metadata = { ...node.metadata, directorDeskId: record.id, directorDeskName: record.name };
+                // 导演台由独立插件（3d-director-desk）提供；节点仅生成关联实例 ID 作为链接锚点。
+                node.metadata = { ...node.metadata, directorDeskId: `desk-${crypto.randomUUID()}` };
             }
             nodes = [...nodes, node];
             selectedNodeIds = [node.id];

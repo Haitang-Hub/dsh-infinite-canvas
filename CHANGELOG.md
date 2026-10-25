@@ -2,6 +2,8 @@
 
 ## Unreleased
 
++ [变更] 3D 导演台从本项目中真删除，改为独立插件使用：删除 web/src/pages/director（编辑器/隐藏 iframe 宿主/模型资产 63MB）与 stage/camera/preview 全部 MCP 工具及桥侧导演台路由。画布保留"导演台节点"作为链接锚点（内联生成 directorDeskId），悬浮"打开导演台"改为新标签页打开 3d-director-desk 插件应用（默认 http://127.0.0.1:5080，可经 config.js 的 directorDeskUrl 覆盖）。导演台工具由该插件的 MCP（17372）提供，两个插件同时在 harness 挂载即可协作。
+
 + [新增] MCP 插件化改造（接入 DeepSeek harness）：canvas-agent 解绑 Codex，收敛为「画布桥服务 + stdio MCP 服务」。工具调用链路 MCP → HTTP(17371) → SSE → 浏览器执行器；新增 `canvas-agent doctor` 一键自检（桥在线/执行器在线/data 目录可写/协议版本）与 `GET /bootstrap` token 零配置发现。
 + [新增] 执行链路稳健性：执行器离线 3s 判定返回结构化错误 `executor_offline`（MCP 以 isError + hint 引导打开画布页）；按工具类别的执行超时（状态类 10s / 导出类 300s / 默认 30s）；同一执行器 tool_call FIFO 串行避免画布竞态；执行器 15s 心跳判定在线。
 + [新增] 桥侧结构化日志：全量工具调用落盘 `data/logs/tool-calls.jsonl`，删除类操作审计落盘 `data/logs/tool-audit.jsonl`。

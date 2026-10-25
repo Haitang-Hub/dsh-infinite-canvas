@@ -12,10 +12,7 @@
 ```
 infinite-canvas/
 ├── web/           前端（Vite + React + antd，端口 5070）
-│   └── src/pages/
-│       ├── canvas/            画布列表页 + 画布编辑页（/ 与 /canvas/:id）
-│       └── director/          3D 导演台编辑器（仅作为画布工具的隐藏 iframe 宿主，
-│                               路由 /director/editor，不在导航中显示）
+│   └── src/pages/canvas/      画布列表页 + 画布编辑页（/ 与 /canvas/:id）
 ├── canvas-agent/  本机画布桥 + MCP 服务（端口 17371；`canvas-agent mcp` 启动 MCP stdio）
 ├── canvas-proxy/  本地转发代理（端口 23210，解决 AI 供应商 API 的 CORS）
 ├── start.bat      Windows 一键启动
@@ -23,9 +20,11 @@ infinite-canvas/
 └── docs/bridge-protocol.md  桥协议规范（与 3d-director-desk 共享）
 ```
 
-> 注意：画布页提供 stage/camera/preview 等导演台工具，这些工具通过隐藏 iframe 承载
-> `/director/editor` 页面执行，因此导演台编辑器代码保留在本项目中，但导航中不出现
-> 导演台入口。纯导演台产品见 `../3d-director-desk`。
+> 导演台是独立插件：3D 导演台（摆位、运镜、预演导出）已从本项目移除，由独立项目
+> `../3d-director-desk` 提供（自带 Web 5080 + 桥 17372 + MCP）。画布中的"导演台节点"
+> 保留为链接锚点（metadata.directorDeskId），节点悬浮工具栏的"打开导演台"会在新标签页
+> 打开插件应用中对应实例（地址默认 http://127.0.0.1:5080，可在 web/public/config.js 用
+> `directorDeskUrl` 覆盖）。harness 同时挂两个插件的 MCP 即可让 AI 完成画布→导演台协作。
 
 ## 启动
 
@@ -61,8 +60,8 @@ http://localhost:5070 并保持页面开启；否则工具返回 `executor_offli
 
 工具分三组：项目管理（`canvas_list_projects` / `site_navigate`）、画布操作
 （`canvas_apply_ops` 批量入口 + 各便捷封装 + 读取类工具）、生成（`canvas_run_generation`
-+ `generation_get_status` 状态查询）。导演台 `stage_*` / `camera_*` / `preview_*` 工具
-经桥路由到导演台页面执行器。
++ `generation_get_status` 状态查询）。另有 `shot_*` 镜头编排工具。导演台 `stage_*` /
+`camera_*` / `preview_*` 工具由 3d-director-desk 插件的 MCP 提供，不在本项目 MCP 中。
 
 ## 本地文件存储
 

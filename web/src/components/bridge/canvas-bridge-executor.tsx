@@ -5,7 +5,6 @@ import i18n from "@/i18n";
 import { randomId } from "@/lib/utils";
 import { ensureBridgeConfig, persistBridgeConfig, type BridgeConfig } from "@/lib/agent/bridge-config";
 import { isSiteTool, runSiteTool } from "@/lib/agent/agent-site-tools";
-import { setDirectorHostApplyOps } from "@/lib/agent/director-desk-host";
 import { activateAgentClient, postState, postToolResult } from "@/services/api/canvas-agent";
 import { useBridgeStore, type BridgeCanvasContext } from "@/stores/use-bridge-store";
 import { type CanvasAgentOp, type CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
@@ -39,16 +38,6 @@ export function CanvasBridgeExecutor() {
         return () => {
             disposed = true;
         };
-    }, []);
-
-    // 注册导演台产物写回通道：iframe/弹窗内的导出经 postMessage 应用为当前画布 ops。
-    useEffect(() => {
-        setDirectorHostApplyOps(async (_projectId, ops) => {
-            const context = canvasContextRef.current;
-            if (!context) throw new Error("宿主画布未就绪（请确认当前页面已打开画布工程）");
-            return context.applyOps(ops as CanvasAgentOp[]);
-        });
-        return () => setDirectorHostApplyOps(null);
     }, []);
 
     // 命令式订阅画布上下文，防抖上报快照；不在渲染路径订阅，避免拖拽时每帧重渲染。
