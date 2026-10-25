@@ -1,4 +1,4 @@
-# Infinite Canvas - Local Startup
+﻿# Infinite Canvas - Local Startup
 $ErrorActionPreference = "Continue"
 $root = $PSScriptRoot
 $webDir = Join-Path $root "web"
