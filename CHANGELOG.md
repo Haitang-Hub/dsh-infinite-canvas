@@ -2,6 +2,12 @@
 
 ## Unreleased
 
++ [新增] MCP 插件化改造（接入 DeepSeek harness）：canvas-agent 解绑 Codex，收敛为「画布桥服务 + stdio MCP 服务」。工具调用链路 MCP → HTTP(17371) → SSE → 浏览器执行器；新增 `canvas-agent doctor` 一键自检（桥在线/执行器在线/data 目录可写/协议版本）与 `GET /bootstrap` token 零配置发现。
++ [新增] 执行链路稳健性：执行器离线 3s 判定返回结构化错误 `executor_offline`（MCP 以 isError + hint 引导打开画布页）；按工具类别的执行超时（状态类 10s / 导出类 300s / 默认 30s）；同一执行器 tool_call FIFO 串行避免画布竞态；执行器 15s 心跳判定在线。
++ [新增] 桥侧结构化日志：全量工具调用落盘 `data/logs/tool-calls.jsonl`，删除类操作审计落盘 `data/logs/tool-audit.jsonl`。
++ [变更] web 端删除内置聊天面板（agent-panel/agent-chat/skills/history 等组件与 use-agent-store），对话由接入的 MCP 客户端提供；新增无界面画布执行器 CanvasBridgeExecutor + 轻量 use-bridge-store，顶栏 Bot 按钮/画布页 Agent 按钮改为连接状态徽标（在线/离线/执行中）。
++ [变更] canvas-agent 删除 @openai/codex 等依赖，修复 schemas 重复属性与节点类型缺失两个 tsc 错误；新增 `docs/bridge-protocol.md` 桥协议规范（与 3d-director-desk 共享，变更需两侧同步递增版本）。
+
 + [修复] 导演台产物写回通道从未注册：c6bccde 只在 Agent 面板导入了 setDirectorHostApplyOps 但没有调用，导出渲染成功后写回必报「宿主画布未就绪」；现已在面板挂载时注册 applyOps 回调，截图与预演视频可正常写回画布并连线到导演台节点（已在真实画布上端到端验证）。
 + [修复] 导演台截图/预演视频写回画布持续失败的问题：画布上存在历史形态的导演台节点（type 为 text、仅靠 nodeType 或 metadata.directorDeskId 标识）时，stage_open 找不到来源节点导致导出窗口缺少 fromNode 参数，每次导出都报「写回画布失败」；现在节点匹配兼容该形态，且写回端在 fromNode 缺失时按导演台实例 ID 反查来源节点兜底。
 + [调整] 补齐画布 Agent 的导演台工具引导：canvas_create_node 说明支持 director 节点（自动绑定导演台实例）、stage_open 提示画布上没有导演台时先创建再打开，并在姿势与运镜预设说明中列出双膝跪（kneel-two）和群友预设（环绕摇臂降镜/升镜、过肩绕正面等），Agent 可从零完成「建导演台→摆角色道具→设姿势→应用运镜→截图和预演视频写回画布」全流程。

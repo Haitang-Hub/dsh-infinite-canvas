@@ -6,6 +6,7 @@ import { uploadMediaFile } from "@/services/file-storage";
 import { uploadImage } from "@/services/image-storage";
 import { CanvasNodeType } from "@/types/canvas";
 import { nanoid } from "nanoid";
+import { ensureBridgeConfig } from "@/lib/agent/bridge-config";
 
 import { requestCleanFrameExport } from "../io/cleanFrameExport";
 import { requestReferenceVideoExport } from "../io/referenceVideoExport";
@@ -79,13 +80,19 @@ export function DirectorAgentBridge() {
     const clientIdRef = useRef(`director-${Math.random().toString(36).slice(2, 10)}`);
 
     useEffect(() => {
-        const endpoint = (localStorage.getItem("canvas-agent-url") || "").replace(/\/$/, "");
-        const token = localStorage.getItem("canvas-agent-token") || "";
-        if (!endpoint || !token) return;
-
-        const clientId = clientIdRef.current;
         let disposed = false;
-        const source = new EventSource(`${endpoint}/events?token=${encodeURIComponent(token)}&clientId=${encodeURIComponent(clientId)}&role=director&dv=${DIRECTOR_BRIDGE_VERSION}&desk=${encodeURIComponent(new URLSearchParams(window.location.search).get("instanceId") || "")}`);
+        let source: EventSource | null = null;
+        // 连接配置零配置发现：localStorage 优先，缺失时经桥服务 /bootstrap 获取本机 token。
+        void ensureBridgeConfig().then((config) => {
+            if (disposed || !config) return;
+            const endpoint = config.url;
+            const token = config.token;
+            source = new EventSource(`${endpoint}/events?token=${encodeURIComponent(token)}&clientId=${encodeURIComponent(clientIdRef.current)}&role=director&dv=${DIRECTOR_BRIDGE_VERSION}&desk=${encodeURIComponent(new URLSearchParams(window.location.search).get("instanceId") || "")}`);
+            setupBridge(source, endpoint, token);
+        });
+
+        const setupBridge = (source: EventSource, endpoint: string, token: string) => {
+        const clientId = clientIdRef.current;
 
         // 编辑器完全加载后上报就绪；未就绪的窗口不参与导演台工具路由。
         const reportReady = () => {
@@ -110,9 +117,11 @@ export function DirectorAgentBridge() {
                 .catch((error) => postResult(endpoint, token, clientId, payload.requestId!, { error: error instanceof Error ? error.message : String(error) }));
         });
 
+        };
+
         return () => {
             disposed = true;
-            source.close();
+            source?.close();
         };
     }, []);
 

@@ -36,9 +36,9 @@ if (-not (Test-Path "$webDir/node_modules")) {
 
 Write-Host "Starting services..." -ForegroundColor Cyan
 
-# 1. Agent (port 17371) - local source, includes unpublished fixes
-Start-Process cmd -ArgumentList '/k', 'title Agent 17371 && npm run dev' -WorkingDirectory $agentDir
-Write-Host "  Agent started" -ForegroundColor Green
+# 1. Bridge (port 17371) - MCP 工具经此分发给浏览器执行器
+Start-Process cmd -ArgumentList '/k', 'title Bridge 17371 && npm run dev' -WorkingDirectory $agentDir
+Write-Host "  Bridge started" -ForegroundColor Green
 
 # 2. Proxy (port 23210) - local source, output shown directly in window
 Start-Process cmd -ArgumentList '/k', 'title Proxy 23210 && node index.js' -WorkingDirectory $proxyDir

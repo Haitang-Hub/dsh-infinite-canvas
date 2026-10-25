@@ -46,9 +46,9 @@ if not exist "%WEB_DIR%\node_modules" (
 echo Starting services...
 echo.
 
-:: 1. Agent (port 17371) - local source, includes unpublished fixes
-start "Agent 17371" cmd /k "pushd "%~dp0canvas-agent" && npm run dev"
-echo [OK] Agent started
+:: 1. Bridge (port 17371) - MCP 工具经此分发给浏览器执行器
+start "Bridge 17371" cmd /k "pushd "%~dp0canvas-agent" && npm run dev"
+echo [OK] Bridge started
 
 :: 2. Proxy (port 23210) - output shown directly in window
 start "Proxy 23210" cmd /k "pushd "%~dp0canvas-proxy" && node index.js"
