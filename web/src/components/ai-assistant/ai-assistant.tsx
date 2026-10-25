@@ -514,6 +514,11 @@ function AssistantChat() {
                     patchMessage(toolMessage.id, { error: error instanceof Error ? error.message : String(error) });
                 }
             }
+            // 循环耗尽且最后一步仍是工具执行（任务没做完）：给出明确反馈，用户可发「继续」接着处理。
+            const tail = useAiAssistantStore.getState().messages.at(-1);
+            if (tail?.role === "tool") {
+                addMessage({ id: randomId(), role: "notice", text: t("aiAssistant.toolRoundNotice", { count: ASSISTANT_TOOL_ROUND_LIMIT }) });
+            }
         } catch (error) {
             if ((error as Error).name !== "AbortError") {
                 addMessage({ id: randomId(), role: "error", text: error instanceof Error ? error.message : String(error) });
@@ -564,6 +569,13 @@ function AssistantBubble({ message, bubbleClass }: { message: AssistantMessage; 
     const softStyle = { background: "var(--ai-soft)", color: "var(--ai-text)", borderColor: "var(--ai-border)" } as React.CSSProperties;
 
     if (message.role === "tool") return <ToolCallRow message={message} compact={compact} />;
+    if (message.role === "notice") {
+        return (
+            <div className="rounded-xl border px-3 py-2 text-xs" style={{ borderColor: "var(--ai-border)", color: "var(--ai-muted)", background: "var(--ai-soft)" }}>
+                {message.text}
+            </div>
+        );
+    }
     if (message.role === "error") return <div className="rounded-xl bg-red-500/10 px-3 py-2 text-xs text-red-500">{message.text}</div>;
     if (message.role === "user") {
         return (

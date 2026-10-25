@@ -46,6 +46,8 @@ export function buildAssistantSystemPrompt(context: AssistantToolContext) {
         "",
         "## 工作方式",
         "- 批量改动合并为一次 canvas_apply_ops，并在完成后用一句话说明做了什么。",
+        "- add_node 可指定自定义 id（如 \"node-text-1\"）；创建节点与 connect_nodes 连线尽量放在同一次 apply_ops 中一步完成，避免多余往返。",
+        "- ops 数组元素格式为 {\"type\": \"add_node\", ...}；不要按执行结果逐步等待 id——用自定义 id 一次完成创建与连线。",
         "- 生成图片/视频：创建提示词文本节点 + config 节点并连线，对 config 节点 run_generation；生成是异步的，用 generation_get_status 查询。",
         "- 纯聊天或答疑正常回复，不调用工具。",
     ].join("\n");
@@ -135,12 +137,24 @@ export function visibleAssistantText(text: string): string {
     return out.replace(/\n{3,}/g, "\n\n").trim();
 }
 
+/** 将 MCP 风格的单键 op（{"add_node": {...}}）归一为前端 ops（{"type": "add_node", ...}）；已合规的原样返回。 */
+function normalizeCanvasOp(op: unknown): unknown {
+    if (!op || typeof op !== "object" || Array.isArray(op)) return op;
+    const record = op as Record<string, unknown>;
+    if (typeof record.type === "string") return record;
+    const keys = ["add_node", "update_node", "delete_node", "connect_nodes", "select_nodes", "set_viewport", "run_generation"];
+    const key = Object.keys(record).find((k) => keys.includes(k));
+    if (!key || !record[key] || typeof record[key] !== "object" || Array.isArray(record[key])) return record;
+    return { type: key, ...(record[key] as Record<string, unknown>) };
+}
+
 /** 在当前页面内执行一次助手工具调用。 */
 export async function runAssistantTool(call: { name: string; input: Record<string, unknown> }, context: AssistantToolContext) {
     switch (call.name) {
         case "canvas_apply_ops": {
             if (!context.applyOps) throw new Error("当前页面没有打开画布");
-            const ops = Array.isArray(call.input.ops) ? call.input.ops : [];
+            const ops = (Array.isArray(call.input.ops) ? call.input.ops : []).map(normalizeCanvasOp);
+            if (!ops.length) throw new Error("ops 为空：请提供要执行的画布操作数组");
             return { applied: ops.length, snapshot: context.applyOps(ops) };
         }
         case "canvas_get_state": {

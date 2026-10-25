@@ -353,6 +353,7 @@ export default {
         emptyHint: "我是画布 AI 助手，可以直接增删节点、连线、触发生成。试试「帮我建一个三镜头分镜」。",
         noCanvas: "当前页面没有打开画布",
         requestFailed: "请求失败",
+        toolRoundNotice: "已连续执行 {{count}} 次工具调用，先暂停。发送「继续」可让助手接着完成剩余操作。",
         toolDetail: "执行详情",
         toolRunning: "执行中…",
         toolDone: "完成",

@@ -33,6 +33,7 @@ export type AssistantMessage =
     | { id: string; role: "user"; text: string }
     | { id: string; role: "assistant"; text: string }
     | { id: string; role: "tool"; tool: string; input: unknown; result?: unknown; error?: string; round: number }
+    | { id: string; role: "notice"; text: string }
     | { id: string; role: "error"; text: string };
 
 const GEOMETRY_KEY = "ai-assistant-geometry";
