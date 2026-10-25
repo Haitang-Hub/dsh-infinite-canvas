@@ -132,6 +132,13 @@ export const useAiAssistantStore = create<AiAssistantStore>((set, get) => ({
         if (geometry.mode === "float" && !previous.x && !previous.y && typeof window !== "undefined") {
             geometry = { ...geometry, x: Math.max(16, window.innerWidth - geometry.w - 28), y: Math.max(16, window.innerHeight - geometry.h - 88) };
         }
+        // 悬浮态打开时夹取回当前视口，避免历史坐标把面板顶出屏幕外。
+        if (geometry.mode === "float" && typeof window !== "undefined") {
+            geometry.w = Math.min(geometry.w, window.innerWidth - 16);
+            geometry.h = Math.min(geometry.h, window.innerHeight - 16);
+            geometry.x = Math.min(Math.max(0, geometry.x), Math.max(0, window.innerWidth - geometry.w));
+            geometry.y = Math.min(Math.max(0, geometry.y), Math.max(0, window.innerHeight - geometry.h));
+        }
         persist(GEOMETRY_KEY, geometry);
         set({ geometry });
     },

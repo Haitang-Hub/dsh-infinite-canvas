@@ -110,20 +110,27 @@ function AssistantHeader() {
             const dy = moveEvent.clientY - state.startY;
             if (!state.moved && Math.abs(dx) + Math.abs(dy) <= 4) return;
             state.moved = true;
-            if (!state.undocked) {
+            // 仅当本次手势真的把停靠面板拖出时标记 undocked：悬浮态开始的拖动保持 false，松手才能判定停靠。
+            if (!state.undocked && useAiAssistantStore.getState().geometry.mode !== "float") {
                 state.undocked = true;
-                if (useAiAssistantStore.getState().geometry.mode !== "float") {
-                    setGeometry({ mode: "float", x: state.originX, y: state.originY, w: state.originW, h: state.originH });
-                }
+                // 拖出后保持视觉宽度，高度收敛到 85% 视口：悬浮面板可移动且不顶满全屏。
+                setGeometry({
+                    mode: "float",
+                    x: state.originX,
+                    y: state.originY,
+                    w: state.originW,
+                    h: Math.min(state.originH, Math.round(window.innerHeight * 0.85)),
+                });
             }
-            const pos = clampPanel(state.originX + dx, state.originY + dy);
+            const g = useAiAssistantStore.getState().geometry;
+            const pos = clampPanel(state.originX + dx, state.originY + dy, g.w, g.h);
             setGeometry(pos);
         };
         const onUp = (upEvent: PointerEvent) => {
             const state = drag.current;
             drag.current = null;
-            // 只有真正拖动过才判定停靠意图，避免误触点击把面板吸走。
-            if (state?.moved) {
+            // 只有"从悬浮态开始"的拖动才判定停靠意图：本次手势拖出的面板不再被吸回，避免沿边拖动时松手立刻重新停靠。
+            if (state?.moved && !state.undocked) {
                 const side = dockSideFromPointer(upEvent.clientX, upEvent.clientY);
                 const currentH = useAiAssistantStore.getState().geometry.h;
                 if (side === "bottom") setGeometry({ mode: "bottom", h: Math.min(currentH, 420) });

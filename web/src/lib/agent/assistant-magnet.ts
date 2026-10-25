@@ -12,11 +12,11 @@ function clamp(value: number, min: number, max: number) {
     return Math.min(Math.max(min, value), Math.max(min, max));
 }
 
-/** 拖动中：仅限制面板在视口内。 */
-export function clampPanel(rawX: number, rawY: number): { x: number; y: number } {
+/** 拖动中：限制面板完整可见（不出视口）。 */
+export function clampPanel(rawX: number, rawY: number, w: number, h: number): { x: number; y: number } {
     return {
-        x: clamp(rawX, 0, Math.max(0, window.innerWidth - 120)),
-        y: clamp(rawY, 0, Math.max(0, window.innerHeight - 48)),
+        x: clamp(rawX, 0, Math.max(0, window.innerWidth - w)),
+        y: clamp(rawY, 0, Math.max(0, window.innerHeight - h)),
     };
 }
 
