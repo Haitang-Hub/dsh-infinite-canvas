@@ -621,9 +621,10 @@
 
 /* ===== AI 助手悬浮面板（配色全部来自画布主题 token 注入的 CSS 变量） ===== */
 .ai-assistant {
-    background: color-mix(in srgb, var(--ai-bg) calc(100% - var(--ai-glass, 20) * 0.9%), transparent);
-    backdrop-filter: blur(calc(8px + var(--ai-glass, 20) * 0.25px));
-    -webkit-backdrop-filter: blur(calc(8px + var(--ai-glass, 20) * 0.25px));
+    /* --ai-glass 为不透明度百分比：越大越实，越小越透明；背景虚化固定 20px（对齐 Canvas Director）。 */
+    background: color-mix(in srgb, var(--ai-bg) calc(var(--ai-glass, 80) * 1%), transparent);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     color: var(--ai-text);
     box-shadow: 0 24px 64px -14px rgba(0, 0, 0, 0.4);
 }
@@ -632,6 +633,41 @@
     background-image: linear-gradient(135deg, color-mix(in srgb, var(--ai-accent, #6366f1) 80%, white), color-mix(in srgb, var(--ai-accent, #6366f1) 86%, black));
     box-shadow: 0 6px 20px -6px color-mix(in srgb, var(--ai-accent, #6366f1) 55%, transparent);
 }
+/* AI 助手外观设置内联弹层：锚定在输入区工具按钮上方（对齐 3d-director-desk 的弹层样式）。 */
+.ai-appearance {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 10px);
+    z-index: 20;
+    width: 248px;
+    border: 1px solid var(--ai-border);
+    border-radius: 12px;
+    padding: 16px 18px 18px;
+    background: color-mix(in srgb, var(--ai-bg) 96%, transparent);
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(22px) saturate(150%);
+    -webkit-backdrop-filter: blur(22px) saturate(150%);
+}
+.ai-appearance-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--ai-muted);
+}
+.ai-appearance-value {
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--ai-muted);
+}
+.ai-appearance input[type="range"] {
+    width: 100%;
+    height: 18px;
+    margin: 12px 0 0;
+    accent-color: var(--ai-accent);
+    cursor: pointer;
+}
 /* 用户消息气泡：同一主色渐变 + 反色文字。 */
 .ai-msg-user {
     background-image: linear-gradient(135deg, color-mix(in srgb, var(--ai-accent) 88%, white), color-mix(in srgb, var(--ai-accent) 94%, black));
@@ -639,4 +675,153 @@
 }
 .ai-model-select .ant-select-selection-item {
     font-size: 12px;
+}
+
+/* ===== Agent 面板（自 Canvas Director 移植）：streamdown markdown 渲染样式 ===== */
+
+.agent-streamdown {
+    overflow-wrap: anywhere;
+}
+
+.agent-streamdown > :first-child {
+    margin-top: 0;
+}
+
+.agent-streamdown > :last-child {
+    margin-bottom: 0;
+}
+
+.agent-streamdown [data-streamdown="code-block"] {
+    position: relative;
+    display: block;
+    contain: none;
+    contain-intrinsic-size: none !important;
+    width: 100%;
+    margin-block: 0.35rem;
+    padding: 0;
+    gap: 0;
+    overflow: hidden;
+    border: 0;
+    border-radius: 0.4rem;
+    background: color-mix(in srgb, currentColor 5%, transparent);
+}
+
+.agent-streamdown [data-streamdown="code-block-header"] {
+    display: none;
+}
+
+.agent-streamdown [data-streamdown="code-block"] > div:has(> [data-streamdown="code-block-actions"]) {
+    position: absolute;
+    top: 0.2rem;
+    right: 0.2rem;
+    z-index: 1;
+    height: auto;
+    margin: 0;
+}
+
+.agent-streamdown [data-streamdown="code-block-body"] {
+    min-height: 0;
+    padding: 0.4rem 2rem 0.4rem 0.6rem;
+    overflow-x: auto;
+    border: 0;
+    border-radius: 0;
+    background: transparent !important;
+    font-size: 0.75rem;
+    line-height: 1.15rem;
+}
+
+.agent-streamdown [data-streamdown="code-block-body"] code > span {
+    display: block;
+}
+
+.agent-streamdown [data-streamdown="code-block-actions"] {
+    gap: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0.3rem;
+    background: transparent;
+    box-shadow: none;
+    opacity: 0;
+    transition: opacity 150ms ease;
+}
+
+.agent-streamdown [data-streamdown="code-block"]:hover [data-streamdown="code-block-actions"],
+.agent-streamdown [data-streamdown="code-block-actions"]:focus-within {
+    opacity: 0.58;
+}
+
+.agent-streamdown [data-streamdown="code-block-actions"] button {
+    padding: 0.25rem;
+    border-radius: 0.3rem;
+}
+
+.agent-streamdown [data-streamdown="code-block-actions"] button:hover {
+    background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.agent-streamdown [data-streamdown="inline-code"] {
+    padding: 0.12rem 0.35rem;
+    border: 0;
+    border-radius: 0.3rem;
+    background: color-mix(in srgb, currentColor 7%, transparent);
+    font-size: 0.88em;
+}
+
+.agent-streamdown [data-streamdown="link"] {
+    color: inherit;
+    text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+    text-underline-offset: 0.2em;
+}
+
+[data-streamdown="link-safety-modal"] {
+    padding: 1rem;
+    background: rgb(28 25 23 / 24%);
+    backdrop-filter: blur(8px);
+}
+
+[data-streamdown="link-safety-modal"] > div {
+    max-width: 24rem;
+    gap: 1rem;
+    padding: 1.25rem;
+    border-color: color-mix(in srgb, currentColor 12%, transparent);
+    border-radius: 1rem;
+    box-shadow: 0 20px 60px rgb(28 25 23 / 18%);
+}
+
+[data-streamdown="link-safety-modal"] > div > button {
+    top: 0.9rem;
+    right: 0.9rem;
+}
+
+[data-streamdown="link-safety-modal"] > div > div:first-of-type {
+    gap: 0.25rem;
+    padding-right: 2rem;
+}
+
+[data-streamdown="link-safety-modal"] > div > div:first-of-type > div {
+    gap: 0.5rem;
+    font-size: 1rem;
+}
+
+[data-streamdown="link-safety-modal"] > div > div:nth-of-type(2) {
+    max-height: 7rem;
+    padding: 0.75rem;
+    border: 1px solid color-mix(in srgb, currentColor 9%, transparent);
+    background: color-mix(in srgb, currentColor 4%, transparent);
+    font-size: 0.7rem;
+    line-height: 1.15rem;
+    overflow-wrap: anywhere;
+}
+
+[data-streamdown="link-safety-modal"] > div > div:last-child {
+    justify-content: flex-end;
+}
+
+[data-streamdown="link-safety-modal"] > div > div:last-child button {
+    flex: none;
+    min-width: 7rem;
+    padding: 0.5rem 0.8rem;
+    border-radius: 0.6rem;
+    font-size: 0.75rem;
 }

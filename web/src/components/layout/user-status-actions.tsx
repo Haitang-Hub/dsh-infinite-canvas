@@ -1,14 +1,11 @@
 import type { CSSProperties } from "react";
 import { Tooltip } from "antd";
-import { BookOpen, Keyboard, Puzzle, Settings2 } from "lucide-react";
+import { Bot, Keyboard, Puzzle, Settings2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { useAgentStore } from "@/stores/use-agent-store";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
-import { GitHubLink } from "@/components/layout/github-link";
-import { VersionReleaseModal } from "@/components/layout/version-release-modal";
-import { DOCS_URL } from "@/constant/env";
 import { changeAppLocale, type AppLocale } from "@/i18n";
-import { cn } from "@/lib/utils";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -28,23 +25,18 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     const canvasTheme = canvasThemes[theme];
     const naturalIconClass = "inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-stone-600 transition-colors hover:bg-black/5 hover:text-stone-950 dark:text-stone-300 dark:hover:bg-white/10 dark:hover:text-white [&_svg]:size-4";
     const iconStyle: CSSProperties | undefined = variant === "canvas" ? { color: canvasTheme.node.text } : undefined;
-    const versionStyle = iconStyle;
-    const gitHubClassName = "size-7 text-base";
-    const gitHubStyle = iconStyle;
     const locale = i18n.resolvedLanguage as AppLocale;
     const nextLocale = locale === "zh-CN" ? "en-US" : "zh-CN";
     const languageLabel = t("topNav.switchLanguage", { language: t(nextLocale === "zh-CN" ? "locale.zhCN" : "locale.enUS") });
 
     return (
         <div className="inline-flex shrink-0 items-center gap-1">
+            {variant === "canvas" ? <AiAssistantToggle iconStyle={iconStyle} /> : null}
             {onOpenPlugins ? (
                 <button type="button" className={naturalIconClass} style={iconStyle} onClick={onOpenPlugins} aria-label={t("topNav.plugins")} title={t("topNav.plugins")}>
                     <Puzzle className="size-4" />
                 </button>
             ) : null}
-            <a href={DOCS_URL} target="_blank" rel="noopener noreferrer" className={naturalIconClass} style={iconStyle} aria-label={t("topNav.docs")} title={t("topNav.docs")}>
-                <BookOpen className="size-4" />
-            </a>
             {showConfig ? (
                 <button type="button" className={naturalIconClass} style={iconStyle} onClick={() => openConfigDialog(false)} aria-label={t("navigation.config")} title={t("navigation.config")}>
                     <Settings2 className="size-4" />
@@ -56,13 +48,32 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                 </button>
             </Tooltip>
             <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className={naturalIconClass} style={iconStyle} aria-label={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} title={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} />
-            <VersionReleaseModal style={versionStyle} />
-            <GitHubLink className={cn("bg-transparent hover:bg-transparent dark:hover:bg-transparent", gitHubClassName)} style={gitHubStyle} />
             {onOpenShortcuts ? (
                 <button type="button" className={naturalIconClass} style={iconStyle} onClick={onOpenShortcuts} aria-label={t("topNav.shortcuts")} title={t("topNav.shortcuts")}>
                     <Keyboard className="size-4" />
                 </button>
             ) : null}
         </div>
+    );
+}
+
+/** 「Agent」开关按钮（图标 + 文字，对齐 Canvas Director 顶栏开关）：面板开启时高亮，点击切换关闭/打开。 */
+function AiAssistantToggle({ iconStyle }: { iconStyle: CSSProperties | undefined }) {
+    const { t } = useTranslation();
+    const panelOpen = useAgentStore((state) => state.panelOpen);
+    const togglePanel = useAgentStore((state) => state.togglePanel);
+    return (
+        <button
+            type="button"
+            className={`inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors ${panelOpen ? "bg-black/10 dark:bg-white/15" : "hover:bg-black/5 dark:hover:bg-white/10"}`}
+            style={iconStyle}
+            aria-label={t("aiAssistant.title")}
+            aria-pressed={panelOpen}
+            title={t("aiAssistant.title")}
+            onClick={togglePanel}
+        >
+            <Bot className="size-4" />
+            <span>{t("aiAssistant.title")}</span>
+        </button>
     );
 }

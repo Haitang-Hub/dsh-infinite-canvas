@@ -14,7 +14,6 @@ infinite-canvas/
 ├── web/           前端（Vite + React + antd，端口 5070）
 │   └── src/pages/canvas/      画布列表页 + 画布编辑页（/ 与 /canvas/:id）
 ├── canvas-agent/  本机画布桥 + MCP 服务（端口 17371；`canvas-agent mcp` 启动 MCP stdio）
-├── canvas-proxy/  本地转发代理（端口 23210，解决 AI 供应商 API 的 CORS）
 ├── start.bat      Windows 一键启动
 ├── start.ps1      PowerShell 一键启动
 └── docs/bridge-protocol.md  桥协议规范（与 3d-director-desk 共享）
@@ -30,13 +29,12 @@ infinite-canvas/
 
 双击 `start.bat`（或 `powershell -ExecutionPolicy Bypass -File start.ps1`）。
 首次运行会自动 `npm install`（web 端使用 `--legacy-peer-deps`，因 antd 6 与
-pro-components beta 的 peer 依赖声明冲突），随后启动三个服务：
+pro-components beta 的 peer 依赖声明冲突），随后启动两个服务：
 
 | 服务 | 端口 | 说明 |
 | ---- | ---- | ---- |
 | Web | 5070（被占用时固定回落 5075） | 画布前端（dev server），也是 MCP 工具的浏览器执行器 |
 | Bridge | 17371 | 画布桥服务：MCP ↔ 浏览器执行器的分发中枢，兼本地文件存储 |
-| Proxy | 23210 | AI 供应商 API 转发代理 |
 
 打开 http://localhost:5070 即可使用画布；桥连接零配置（token 经 `GET /bootstrap`
 自动发现），顶栏圆点显示桥状态（在线/离线/执行中）。

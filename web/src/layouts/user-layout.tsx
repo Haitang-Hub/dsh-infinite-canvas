@@ -1,8 +1,7 @@
 import type { ReactNode } from "react";
 
+import { AgentPanel } from "@/components/agent/agent-panel";
 import { AppTopNav } from "@/components/layout/app-top-nav";
-import { CanvasBridgeExecutor } from "@/components/bridge/canvas-bridge-executor";
-import { AiAssistant } from "@/components/ai-assistant/ai-assistant";
 
 export default function UserLayout({ children }: { children: ReactNode }) {
     return (
@@ -11,8 +10,7 @@ export default function UserLayout({ children }: { children: ReactNode }) {
                 <AppTopNav />
                 <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
             </div>
-            <CanvasBridgeExecutor />
-            <AiAssistant />
+            <AgentPanel />
         </div>
     );
 }

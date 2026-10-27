@@ -43,8 +43,9 @@ import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/a
 import { CanvasSidePanel } from "@/components/canvas/canvas-side-panel";
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
-import { directorDeskBaseUrl } from "@/lib/agent/director-plugin";
+import { directorDeskBaseUrl, directorDeskReachable } from "@/lib/agent/director-plugin";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
+import { useAgentStore } from "@/stores/use-agent-store";
 import { usePluginHost } from "@/pages/canvas/hooks/use-plugin-host";
 import { buildNodeMentionReferences, getGroupResourceNodes, isCanvasReferenceNode, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { exportCanvasProjects } from "@/lib/canvas/canvas-export";
@@ -811,6 +812,15 @@ function InfiniteCanvasPage() {
         setViewport,
         setContextMenu,
     });
+
+    // 进入画布页且 Agent 未启用时自动唤出面板（对齐 Canvas Director；带 agentUrl 参数时不抢开）。
+    const agentEnabled = useAgentStore((state) => state.enabled);
+    const fragmentBootstrap = useAgentStore((state) => state.fragmentBootstrap);
+    const openAgentPanel = useAgentStore((state) => state.openPanel);
+    useEffect(() => {
+        if (!projectLoaded) return;
+        if (!searchParams.has("agentUrl") && !agentEnabled && !fragmentBootstrap) openAgentPanel();
+    }, [fragmentBootstrap, agentEnabled, openAgentPanel, projectLoaded, searchParams]);
 
     const { pluginHost, renderPluginPanel, buildNodeToolbarItems } = usePluginHost({
         effectiveConfig,
@@ -3094,11 +3104,24 @@ function InfiniteCanvasPage() {
     }, []);
 
     const handleOpenDirectorDesk = useCallback(
-        (deskId: string, _nodeId: string) => {
+        async (deskId: string, _nodeId: string) => {
             // 打开外部导演台插件（3d-director-desk）中对应的实例；插件地址可经 config.js 的 directorDeskUrl 覆盖。
-            window.open(`${directorDeskBaseUrl()}/director/editor?instanceId=${encodeURIComponent(deskId)}`, "_blank", "noopener");
+            const baseUrl = directorDeskBaseUrl();
+            const url = `${baseUrl}/director/editor?instanceId=${encodeURIComponent(deskId)}`;
+            // 服务未启动时浏览器只会给出原生的"拒绝连接"错误页，先探测再决定如何打开。
+            if (await directorDeskReachable()) {
+                window.open(url, "_blank", "noopener");
+                return;
+            }
+            modal.confirm({
+                title: t("canvas.node.directorDeskOfflineTitle"),
+                content: t("canvas.node.directorDeskOffline", { url: baseUrl }),
+                okText: t("canvas.node.directorDeskOpenAnyway"),
+                cancelText: t("common.cancel"),
+                onOk: () => window.open(url, "_blank", "noopener"),
+            });
         },
-        [],
+        [modal, t],
     );
 
     const renderNodePanel = useCallback(
@@ -3175,7 +3198,6 @@ function InfiniteCanvasPage() {
                     canUndo={historyState.canUndo}
                     canRedo={historyState.canRedo}
                     onHome={() => navigate("/")}
-                    onProjects={() => navigate("/canvas")}
                     onCreateProject={createAndOpenProject}
                     onDeleteProject={deleteCurrentProject}
                     onExportProject={exportCurrentProject}

@@ -1,14 +1,30 @@
 import crypto from "node:crypto";
 import type { ServerResponse } from "node:http";
 
-import { appendToolLog } from "../server/tool-logs.js";
+import type { AgentAttachment } from "../agent/types.js";
 import { logger } from "../utils/logger.js";
-import { buildCanvasToolRequest } from "./operations.js";
+import { buildCanvasToolRequest, fitAttachmentNodeSize } from "./operations.js";
 import type { ToolName } from "./schemas.js";
-import { compactCanvasState, compactNode, isToolName, parseToolInput } from "./tools.js";
+import { compactCanvasState, compactNode, isToolName, nextCanvasX, parseToolInput } from "./tools.js";
 import type { CanvasSnapshot } from "./types.js";
 
-/** 由画布页面执行器执行的工具；其余画布工具经 buildCanvasToolRequest 转为 canvas_apply_ops。 */
+type PendingRequest = { clientId: string; resolve: (value: unknown) => void; reject: (error: Error) => void };
+type TurnAttachment = { clientId: string; id: string; name: string; type: string; size: number; width: number; height: number; dataUrl: string };
+type ReplayEvent = { type: string; payload: Record<string, unknown> };
+export type CodexState = { busy: boolean; threadId: string; turnId: string };
+export type McpStartupState = "starting" | "ready" | "failed" | "cancelled";
+export type ConversationState = {
+    revision: number;
+    conversationId: string;
+    threadId: string;
+    status: "idle" | "preparing" | "ready" | "warning" | "running" | "failed";
+    mcpStatuses: Record<string, { status: McpStartupState; error?: string | null; failureReason?: string | null }>;
+    sourceClientId?: string;
+    error?: string;
+};
+type McpInventoryItem = { name: string; authStatus?: string };
+export const AGENT_PROTOCOL_VERSION = 7;
+
 const SITE_TOOLS = new Set<ToolName>([
     "site_navigate",
     "canvas_list_projects",
@@ -22,123 +38,271 @@ const SITE_TOOLS = new Set<ToolName>([
     "generation_get_status",
 ]);
 
-type PendingRequest = { clientId: string; resolve: (value: unknown) => void; reject: (error: Error) => void };
-export const AGENT_PROTOCOL_VERSION = 7;
-
-/** 执行器离线判定等待窗口：工具调用下发后 3s 内没有在线执行器即返回结构化错误。 */
-const EXECUTOR_ONLINE_WAIT_MS = 3000;
-/** 心跳超过该时长视为执行器失联（执行器每 15s 上报一次）。 */
-const HEARTBEAT_STALE_MS = 45000;
-
-/** 按工具类别的执行超时：状态读取类 10s，其余默认 30s。 */
-const STATUS_TIMEOUT_MS = 10_000;
-const DEFAULT_TIMEOUT_MS = 30_000;
-const STATUS_TOOLS = new Set<ToolName>([
-    "canvas_list_projects",
-    "canvas_get_state",
-    "canvas_get_selection",
-    "generation_get_status",
-    "workbench_image_get_config",
-    "workbench_video_get_config",
-    "prompts_search",
-    "assets_list",
-]);
-
-/** 删除类工具：桥侧记录审计日志（人在回路的确认由 harness 自身完成）。 */
-const DELETE_TOOLS = new Set<ToolName>(["canvas_delete_nodes", "shot_delete"]);
-
-/** 带结构化错误码的工具调用失败，MCP 层据此返回可引导用户的错误。 */
-export class BridgeToolError extends Error {
-    code: string;
-    hint?: string;
-    constructor(code: string, message: string, hint?: string) {
-        super(message);
-        this.name = "BridgeToolError";
-        this.code = code;
-        this.hint = hint;
-    }
-}
-
-/** 管理浏览器执行器连接、画布状态快照与工具调用分发。 */
+/** 管理网页画布连接、状态、附件和工具请求。 */
 export class CanvasSession {
     private clients = new Map<string, ServerResponse>();
     private clientFocusOrder = new Map<string, number>();
     private pending = new Map<string, PendingRequest>();
+    private pendingApprovals = new Map<string, Record<string, unknown>>();
     private canvasStates = new Map<string, CanvasSnapshot>();
-    private heartbeats = new Map<string, number>();
-    /** 每个 canvas 执行器一个 FIFO 队列：同一页面的工具调用按到达顺序串行执行，避免画布状态竞态。 */
-    private queues = new Map<string, Promise<unknown>>();
+    private turnAttachments = new Map<string, TurnAttachment>();
+    private codexReplayEvents = new Map<string, ReplayEvent>();
+    private codexReplayActiveItems = new Set<string>();
+    private codexMutationBusy = false;
     private activeClientId = "";
+    private boundClientId = "";
     private focusSequence = 0;
+    private codexState: CodexState = { busy: false, threadId: "", turnId: "" };
+    private conversationState: ConversationState;
+    private conversationInventoryComplete = false;
+    private preparedConversationThreadId = "";
+
+    constructor(activeThreadId = "") {
+        this.conversationState = {
+            revision: 1,
+            conversationId: activeThreadId || crypto.randomUUID(),
+            threadId: activeThreadId,
+            status: activeThreadId ? "ready" : "idle",
+            mcpStatuses: {},
+        };
+    }
 
     /** 获取当前目标网页的画布状态。 */
     private get canvasState() {
         return this.clients.has(this.targetClientId) ? this.canvasStates.get(this.targetClientId) || null : null;
     }
 
-    /** 获取最近激活的网页客户端。 */
+    /** 获取当前 turn 绑定或最近激活的网页客户端。 */
     private get targetClientId() {
-        return this.activeClientId;
+        return this.boundClientId || this.activeClientId;
     }
 
-    /** 返回桥服务当前健康状态。 */
+    /** 返回 Canvas Agent 当前连接状态。 */
     health() {
-        return {
-            ok: true,
-            protocolVersion: AGENT_PROTOCOL_VERSION,
-            hasCanvas: Boolean(this.canvasState),
-            canvasClients: this.clients.size,
-            executorOnline: this.hasOnlineExecutor(),
-        };
+        return { ok: true, protocolVersion: AGENT_PROTOCOL_VERSION, hasCanvas: Boolean(this.canvasState), clients: this.clients.size, codexBusy: this.codexState.busy, conversation: this.conversationStateSnapshot };
     }
 
-    /** 是否存在活跃（SSE 在线且心跳未过期）的画布执行器。 */
-    hasOnlineExecutor() {
-        if (!this.clients.size) return false;
-        const now = Date.now();
-        return [...this.clients.keys()].some((clientId) => now - (this.heartbeats.get(clientId) || 0) < HEARTBEAT_STALE_MS);
+    /** 返回 Codex 是否正在执行任务。 */
+    get codexBusy() {
+        return this.codexState.busy;
     }
 
-    /** 判断网页客户端是否仍连接到当前桥服务。 */
+    get codexThreadId() {
+        return this.codexState.threadId;
+    }
+
+    /** Return a copy that callers can restore after a temporary Codex operation. */
+    get codexStateSnapshot(): CodexState {
+        return { ...this.codexState };
+    }
+
+    /** 返回站点级对话的权威快照。 */
+    get conversationStateSnapshot(): ConversationState {
+        return { ...this.conversationState, mcpStatuses: { ...this.conversationState.mcpStatuses } };
+    }
+
+    /** 原子开始一次新建或恢复对话流程。 */
+    beginConversation(options: { threadId?: string; conversationId?: string; sourceClientId?: string } = {}) {
+        this.conversationInventoryComplete = false;
+        this.preparedConversationThreadId = "";
+        return this.updateConversation({
+            conversationId: options.conversationId || options.threadId || crypto.randomUUID(),
+            threadId: options.threadId || "",
+            status: "preparing",
+            mcpStatuses: {},
+            sourceClientId: options.sourceClientId,
+            error: undefined,
+        });
+    }
+
+    /** 记录预热阶段单个 MCP 服务的启动状态。 */
+    updateConversationMcp(name: string, status: McpStartupState, error?: string | null, failureReason?: string | null) {
+        if (!name || this.conversationState.status !== "preparing") return this.conversationStateSnapshot;
+        const snapshot = this.updateConversation({
+            mcpStatuses: { ...this.conversationState.mcpStatuses, [name]: { status, error, failureReason } },
+        });
+        return this.conversationInventoryComplete && this.preparedConversationThreadId
+            ? this.completeConversationPreparation(this.preparedConversationThreadId)
+            : snapshot;
+    }
+
+    /** 用 app-server 的完整 MCP 清单补齐未发送逐项通知的服务。 */
+    completeConversationMcpInventory(services: McpInventoryItem[]) {
+        if (this.conversationState.status !== "preparing") return this.conversationStateSnapshot;
+        const mcpStatuses = { ...this.conversationState.mcpStatuses };
+        services.filter((item) => item.name).forEach((item) => {
+            const current = mcpStatuses[item.name];
+            if (current?.status === "failed" || current?.status === "cancelled") return;
+            mcpStatuses[item.name] = item.authStatus === "notLoggedIn"
+                ? { status: "failed", error: "MCP 服务未登录", failureReason: "reauthenticationRequired" }
+                : { status: "ready" };
+        });
+        this.conversationInventoryComplete = true;
+        return this.updateConversation({ mcpStatuses });
+    }
+
+    /** MCP 清单读取结束后提交线程和最终可发送状态。 */
+    completeConversationPreparation(threadId: string) {
+        this.preparedConversationThreadId = threadId;
+        const statuses = this.conversationState.mcpStatuses;
+        const hasPending = !this.conversationInventoryComplete || Object.values(statuses).some((item) => item.status === "starting");
+        const requiredFailure = statuses["infinite-canvas"]?.status !== "ready";
+        const hasFailure = Object.values(statuses).some((item) => item.status === "failed" || item.status === "cancelled");
+        const requiredFailureDetail = statuses["infinite-canvas"]?.error;
+        return this.updateConversation({
+            threadId,
+            status: hasPending ? "preparing" : requiredFailure ? "failed" : hasFailure ? "warning" : "ready",
+            error: requiredFailure ? `Infinite Canvas MCP 初始化失败${requiredFailureDetail ? `：${requiredFailureDetail}` : ""}` : undefined,
+        });
+    }
+
+    /** 将创建线程或读取 MCP 清单的失败保存为不可发送状态。 */
+    failConversationPreparation(error: string) {
+        this.conversationInventoryComplete = false;
+        this.preparedConversationThreadId = "";
+        return this.updateConversation({ status: "failed", error });
+    }
+
+    /** 切换到无需重新预热的既有状态，例如删除当前对话后的空状态。 */
+    activateConversation(threadId: string, sourceClientId?: string) {
+        this.conversationInventoryComplete = false;
+        this.preparedConversationThreadId = "";
+        return this.updateConversation({
+            conversationId: threadId || crypto.randomUUID(),
+            threadId,
+            status: threadId ? "ready" : "idle",
+            mcpStatuses: {},
+            sourceClientId,
+            error: undefined,
+        });
+    }
+
+    markConversationRunning(threadId: string) {
+        if (!threadId || threadId !== this.conversationState.threadId || !["ready", "warning"].includes(this.conversationState.status)) return this.conversationStateSnapshot;
+        return this.updateConversation({ status: "running" });
+    }
+
+    finishConversationRun(threadId: string) {
+        if (!threadId || threadId !== this.conversationState.threadId) return this.conversationStateSnapshot;
+        const hasFailure = Object.values(this.conversationState.mcpStatuses).some((item) => item.status === "failed" || item.status === "cancelled");
+        return this.updateConversation({ status: hasFailure ? "warning" : "ready" });
+    }
+
+    /** 判断网页客户端是否仍连接到当前 Agent。 */
     hasClient(clientId: string) {
         return this.clients.has(clientId);
     }
 
-    /** 建立网页与桥服务之间的 SSE 连接。 */
-    openEvents(url: URL, res: ServerResponse) {
+    /** 读取指定网页上报的画布，避免提炼时受最近焦点或其他标签页影响。 */
+    canvasStateForClient(clientId: string) {
+        return this.clients.has(clientId) ? this.canvasStates.get(clientId) || null : null;
+    }
+
+    /** 原子取得 Codex 写操作权限，避免多个网页并发切换或修改会话。 */
+    beginCodexMutation() {
+        if (this.codexState.busy || this.codexMutationBusy) return false;
+        this.codexMutationBusy = true;
+        return true;
+    }
+
+    /** 释放 Codex 写操作权限。 */
+    endCodexMutation() {
+        this.codexMutationBusy = false;
+    }
+
+    /** 返回当前 Codex turn 的线程、turn 和发起网页。 */
+    get codexEventScope() {
+        return {
+            threadId: this.codexState.threadId,
+            turnId: this.codexState.busy ? this.codexState.turnId : "",
+            sourceClientId: this.codexState.busy ? this.boundClientId : "",
+        };
+    }
+
+    /** 返回刷新后仍需展示的 Codex 权限请求。 */
+    get codexPendingApprovals() {
+        return [...this.pendingApprovals.values()];
+    }
+
+    /** 跟踪需要跨页面重连恢复的 Codex 权限请求。 */
+    trackCodexEvent(type: string, payload: Record<string, unknown>) {
+        const requestId = String(payload.requestId || "");
+        if (type === "codex_approval" && requestId) this.pendingApprovals.set(requestId, payload);
+        if (type === "codex_approval_resolved" && requestId) this.pendingApprovals.delete(requestId);
+        if (type === "agent_error") this.pendingApprovals.clear();
+    }
+
+    /** 更新并广播 Codex 运行状态；静默后台活动可保留上一 turn 的断线重放。 */
+    setCodexState(patch: Partial<CodexState>, options: { preserveReplay?: boolean } = {}) {
+        const next = { ...this.codexState, ...patch };
+        const threadChanged = next.threadId !== this.codexState.threadId;
+        const turnChanged = Boolean(this.codexState.turnId && next.turnId && next.turnId !== this.codexState.turnId);
+        const nextTurnStarted = !this.codexState.busy && next.busy;
+        if (!options.preserveReplay && (threadChanged || turnChanged || nextTurnStarted)) {
+            this.codexReplayEvents.clear();
+            this.codexReplayActiveItems.clear();
+        }
+        if (!next.busy) {
+            if (this.boundClientId && !this.clients.has(this.boundClientId)) this.boundClientId = "";
+        }
+        if (next.busy === this.codexState.busy && next.threadId === this.codexState.threadId && next.turnId === this.codexState.turnId) return;
+        this.codexState = next;
+        logger.debug("Codex state changed", this.codexState);
+        this.emitAll("codex_state", this.codexState);
+    }
+
+    /** 权威历史已覆盖指定 turn 后，清理其断线重放事件。 */
+    acknowledgeCodexHistory(threadId: string, turnIds: string[]) {
+        const acknowledged = new Set(turnIds.filter(Boolean));
+        if (!threadId || !acknowledged.size) return;
+        this.codexReplayEvents.forEach((event, key) => {
+            const eventThreadId = String(event.payload.threadId || event.payload.thread_id || "");
+            const eventTurnId = String(event.payload.turnId || event.payload.turn_id || "");
+            if (eventThreadId === threadId && acknowledged.has(eventTurnId)) {
+                this.codexReplayEvents.delete(key);
+                this.codexReplayActiveItems.delete(key);
+            }
+        });
+    }
+
+    /** 建立网页与 Canvas Agent 之间的 SSE 连接。 */
+    openEvents(url: URL, res: ServerResponse, activeThreadId = "") {
         const clientId = url.searchParams.get("clientId") || crypto.randomUUID();
         const statusOnly = url.searchParams.get("role") === "status";
-        const role = url.searchParams.get("role") === "director" ? "director" : "canvas";
-        logger.info("SSE client connected", { clientId, role, statusOnly });
+        logger.info("SSE client connected", { clientId, statusOnly });
         res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
-        if (!statusOnly && role !== "director") {
+        if (!statusOnly) {
             this.clients.set(clientId, res);
-            this.heartbeats.set(clientId, Date.now());
             if (!this.activeClientId) {
                 this.activeClientId = clientId;
                 this.clientFocusOrder.set(clientId, ++this.focusSequence);
             }
             if (!this.clientFocusOrder.has(clientId)) this.clientFocusOrder.set(clientId, 0);
         }
-        sendEvent(res, "hello", { ok: true, protocolVersion: AGENT_PROTOCOL_VERSION, clientId });
+        sendEvent(res, "hello", { ok: true, protocolVersion: AGENT_PROTOCOL_VERSION, clientId, workspace: { activeThreadId }, conversation: this.conversationStateSnapshot, codex: this.codexState, pendingApprovals: this.codexPendingApprovals });
+        if (!statusOnly && activeThreadId && this.codexState.threadId === activeThreadId) this.codexReplayEvents.forEach((event) => sendEvent(res, event.type, event.payload));
         const timer = setInterval(() => sendEvent(res, "ping", { time: Date.now() }), 15000);
         res.on("close", () => {
             clearInterval(timer);
-            logger.info("SSE client disconnected", { clientId, role, statusOnly });
-            if (statusOnly || role === "director") return;
-            if (this.clients.get(clientId) !== res) return;
+            logger.info("SSE client disconnected", { clientId, statusOnly });
+            if (statusOnly || this.clients.get(clientId) !== res) return;
             this.clients.delete(clientId);
-            this.heartbeats.delete(clientId);
             this.clientFocusOrder.delete(clientId);
             this.canvasStates.delete(clientId);
-            this.queues.delete(clientId);
             this.pending.forEach((item, requestId) => {
                 if (item.clientId !== clientId) return;
                 this.pending.delete(requestId);
-                item.reject(new BridgeToolError("executor_disconnected", "执行器页面已断开"));
+                item.reject(new Error("请求页面已断开"));
             });
             if (this.activeClientId === clientId) this.activeClientId = [...this.clients.keys()].sort((a, b) => (this.clientFocusOrder.get(b) || 0) - (this.clientFocusOrder.get(a) || 0))[0] || "";
         });
+    }
+
+    private updateConversation(patch: Partial<Omit<ConversationState, "revision">>) {
+        this.conversationState = { ...this.conversationState, ...patch, revision: this.conversationState.revision + 1 };
+        const snapshot = this.conversationStateSnapshot;
+        this.emitAll("conversation_changed", snapshot);
+        return snapshot;
     }
 
     /** 保存指定网页上报的最新画布快照。 */
@@ -150,20 +314,61 @@ export class CanvasSession {
         logger.debug("Canvas state updated", { clientId: targetClientId, nodes: state.nodes?.length || 0, connections: state.connections?.length || 0 });
     }
 
-    /** 刷新执行器心跳时间戳。 */
-    heartbeat(clientId: string) {
-        if (!this.clients.has(clientId)) return false;
-        this.heartbeats.set(clientId, Date.now());
-        return true;
-    }
-
     /** 将指定网页设为最近激活的工具目标。 */
     activateClient(clientId: string) {
         if (!this.clients.has(clientId)) throw new Error("当前网页未连接");
         this.activeClientId = clientId;
         this.clientFocusOrder.set(clientId, ++this.focusSequence);
-        this.heartbeats.set(clientId, Date.now());
         logger.debug("Canvas client activated", { clientId });
+    }
+
+    /** 将当前 Agent turn 固定绑定到指定网页。 */
+    bindClient(clientId: string) {
+        if (!this.clients.has(clientId)) throw new Error("当前网页未连接");
+        this.boundClientId = clientId;
+        logger.debug("Canvas client bound to turn", { clientId });
+    }
+
+    /** 解除当前 Agent turn 的网页绑定。 */
+    releaseClient(clientId: string) {
+        if (this.boundClientId === clientId) this.boundClientId = "";
+        logger.debug("Canvas client released from turn", { clientId });
+    }
+
+    /** 保存当前 turn 可用的图片附件并返回安全引用。 */
+    setTurnAttachments(clientId: string, attachments: AgentAttachment[]) {
+        this.turnAttachments.clear();
+        return attachments.flatMap((item, index) => {
+            if (!item.dataUrl?.startsWith("data:image/")) return [];
+            const id = item.id?.trim() || `attachment-${crypto.randomUUID()}`;
+            const attachment: TurnAttachment = {
+                clientId,
+                id,
+                name: item.name?.trim() || `图片 ${index + 1}`,
+                type: item.type?.startsWith("image/") ? item.type : item.dataUrl.match(/^data:([^;]+)/)?.[1] || "image/png",
+                size: positiveNumber(item.size, 0),
+                width: positiveNumber(item.width, 1024),
+                height: positiveNumber(item.height, 1024),
+                dataUrl: item.dataUrl,
+            };
+            this.turnAttachments.set(id, attachment);
+            return [{ id, name: attachment.name, type: attachment.type, size: attachment.size, width: attachment.width, height: attachment.height }];
+        });
+    }
+
+    /** 清理指定网页或全部 turn 附件。 */
+    clearTurnAttachments(clientId?: string) {
+        this.turnAttachments.forEach((item, id) => {
+            if (!clientId || item.clientId === clientId) this.turnAttachments.delete(id);
+        });
+    }
+
+    /** 获取属于指定网页 turn 的图片附件。 */
+    getTurnAttachment(clientId: string, attachmentId: string) {
+        const attachment = this.turnAttachments.get(attachmentId);
+        if (!attachment) throw new Error(`找不到本轮图片附件：${attachmentId}`);
+        if (attachment.clientId !== clientId) throw new Error("图片附件不属于当前 turn 的发起标签页");
+        return attachment;
     }
 
     /** 接收网页返回的工具调用结果。 */
@@ -171,7 +376,7 @@ export class CanvasSession {
         const item = body.requestId ? this.pending.get(body.requestId) : null;
         if (!item || !body.requestId || item.clientId !== clientId) return false;
         this.pending.delete(body.requestId);
-        logger.debug("Canvas tool result received", { clientId, requestId: body.requestId, error: body.error });
+        logger.debug("Canvas tool result received", { clientId, requestId: body.requestId, error: body.error, result: body.result });
         body.error ? item.reject(new Error(body.error)) : item.resolve(body.result);
         return true;
     }
@@ -181,137 +386,161 @@ export class CanvasSession {
         this.clients.forEach((client) => sendEvent(client, type, payload));
     }
 
-    /** 校验工具参数并将调用分派到浏览器执行器。 */
-    async callTool(name: unknown, rawInput: unknown) {
-        const startedAt = Date.now();
-        if (!isToolName(name)) throw new BridgeToolError("unknown_tool", `未知工具：${String(name)}`);
-        const input = parseToolInput(name, rawInput) as Record<string, unknown>;
-        logger.info("MCP tool called", { name, input, targetClientId: this.targetClientId });
-        try {
-            const result = await this.dispatchTool(name, input);
-            this.recordToolLog({ name, input, startedAt, status: "ok" });
-            return result;
-        } catch (error) {
-            this.recordToolLog({ name, input, startedAt, status: "error", error });
-            throw error;
+    /** 向全部网页广播带线程归属的事件。 */
+    emitThread(type: string, threadId: string, payload: Record<string, unknown> = {}) {
+        const data: Record<string, unknown> = { ...payload, threadId };
+        const replayKey = codexReplayKey(type, data);
+        const eventTurnId = String(data.turnId || data.turn_id || "");
+        const currentScope = threadId === this.codexState.threadId && (!this.codexState.turnId || !eventTurnId || eventTurnId === this.codexState.turnId);
+        if (this.codexState.busy && currentScope && replayKey) {
+            const item = recordValue(data.item);
+            const eventType = String(data.type || "");
+            if (type === "agent_event" && item.id && (eventType === "item.started" || eventType === "item.updated")) this.codexReplayActiveItems.add(replayKey);
+            if (type === "agent_event" && item.id && eventType === "item.completed") this.codexReplayActiveItems.delete(replayKey);
+            if (type === "agent_event" && (eventType === "turn.completed" || eventType === "error")) this.clearReplayActiveTurn(threadId, eventTurnId);
+            const replayData = this.replaySnapshot(replayKey, data);
+            this.codexReplayEvents.set(replayKey, { type, payload: { ...replayData, replayed: true } });
+            while (this.codexReplayEvents.size > 240) {
+                const evictable = [...this.codexReplayEvents.keys()].find((key) => !this.codexReplayActiveItems.has(key));
+                if (!evictable) break;
+                this.codexReplayEvents.delete(evictable);
+            }
         }
+        this.emitAll(type, data);
     }
 
-    private async dispatchTool(name: ToolName, input: Record<string, unknown>) {
+    /** 为断线重连保存完整的最新文本快照，实时连接仍只接收增量。 */
+    private replaySnapshot(replayKey: string, data: Record<string, unknown>) {
+        if (data.type !== "item.updated" && data.type !== "item.completed") return data;
+        const item = recordValue(data.item);
+        if (!item.id) return data;
+        const previous = recordValue(recordValue(this.codexReplayEvents.get(replayKey)?.payload).item);
+        const delta = String(item.delta || "");
+        if (!delta) return data;
+        const previousText = String(previous.text || "");
+        const { delta: _delta, ...snapshotItem } = item;
+        return { ...data, item: { ...previous, ...snapshotItem, text: `${previousText}${delta}` } };
+    }
+
+    private clearReplayActiveTurn(threadId: string, turnId: string) {
+        const prefix = `item:${turnId}:`;
+        this.codexReplayActiveItems.forEach((key) => {
+            if (key.startsWith(prefix)) this.codexReplayActiveItems.delete(key);
+        });
+        if (!turnId) return;
+        this.codexReplayActiveItems.forEach((key) => {
+            const event = this.codexReplayEvents.get(key);
+            const eventThreadId = String(event?.payload.threadId || event?.payload.thread_id || "");
+            const eventTurnId = String(event?.payload.turnId || event?.payload.turn_id || "");
+            if (eventThreadId === threadId && eventTurnId === turnId) this.codexReplayActiveItems.delete(key);
+        });
+    }
+
+    /** 校验工具参数并将调用分派到当前目标网页。 */
+    async callTool(name: unknown, rawInput: unknown) {
+        if (!isToolName(name)) throw new Error(`未知工具：${String(name)}`);
+        logger.info("MCP tool called", { name, input: rawInput, targetClientId: this.targetClientId });
+        const input = parseToolInput(name, rawInput) as Record<string, unknown>;
         if (SITE_TOOLS.has(name)) {
-            await this.ensureExecutorOnline();
+            if (!this.clients.size) throw new Error("当前没有已连接网页");
             return await this.requestCanvasTool(name, input);
         }
-        await this.ensureExecutorOnline();
         const readTool = ["canvas_get_state", "canvas_get_selection", "canvas_export_snapshot", "shot_list"].includes(name);
-        if (readTool && !this.canvasState) throw new BridgeToolError("canvas_not_ready", "当前没有已连接画布", "请先在画布页面打开一个画布工程");
+        if (readTool && (!this.clients.size || !this.canvasState)) throw new Error("当前没有已连接画布");
         if (name === "canvas_get_state" || name === "canvas_export_snapshot") return compactCanvasState(this.canvasState);
         if (name === "shot_list") return { shots: (this.canvasState?.nodes || []).filter((node) => node.type === "shot").map(compactNode) };
         if (name === "canvas_get_selection") {
             const ids = new Set(this.canvasState?.selectedNodeIds || []);
             return { nodes: (this.canvasState?.nodes || []).filter((node) => ids.has(node.id)).map(compactNode) };
         }
+        if (name === "canvas_create_attachment_nodes") return await this.createAttachmentNodes(input as { attachmentIds: string[]; x?: number; y?: number; gap?: number; direction?: "row" | "column" });
+        if (!this.clients.size) throw new Error("当前没有已连接画布");
         const request = buildCanvasToolRequest(name, input, this.canvasState);
         return await this.requestCanvasTool(request.name, request.input);
     }
 
-    /** 等待执行器上线；3s 内没有画布页面在线则返回 executor_offline 结构化错误。 */
-    private async ensureExecutorOnline() {
-        const deadline = Date.now() + EXECUTOR_ONLINE_WAIT_MS;
-        while (!this.hasOnlineExecutor() && Date.now() < deadline) await delay(100);
-        if (!this.hasOnlineExecutor()) {
-            throw new BridgeToolError(
-                "executor_offline",
-                "当前没有在线的画布执行器",
-                "请先打开画布页面 http://localhost:5070 并保持页面开启，然后重试",
-            );
-        }
+    /** 将当前 turn 的附件转换为画布图片节点。 */
+    private async createAttachmentNodes(input: { attachmentIds: string[]; x?: number; y?: number; gap?: number; direction?: "row" | "column" }) {
+        const clientId = this.targetClientId;
+        if (!this.clients.has(clientId)) throw new Error("当前没有已连接画布");
+        const attachments = input.attachmentIds.map((id) => this.getTurnAttachment(clientId, id));
+        const x = Number(input.x ?? nextCanvasX(this.canvasState));
+        const y = Number(input.y ?? 0);
+        const gap = Number(input.gap ?? 40);
+        const direction = input.direction || "row";
+        let offset = 0;
+        const nodes = attachments.map((attachment) => {
+            const size = fitAttachmentNodeSize(attachment.width, attachment.height);
+            const node = {
+                id: `image-${crypto.randomUUID()}`,
+                attachmentId: attachment.id,
+                title: attachment.name,
+                position: { x: direction === "row" ? x + offset : x, y: direction === "column" ? y + offset : y },
+                width: size.width,
+                height: size.height,
+            };
+            offset += (direction === "row" ? size.width : size.height) + gap;
+            return node;
+        });
+        await this.requestCanvasTool("canvas_create_attachment_nodes", { nodes });
+        return { nodes: nodes.map(({ id, attachmentId, title }) => ({ id, attachmentId, title })) };
     }
 
-    /** 将当前目标网页的工具调用串行入队后下发。 */
+    /** 向目标网页发送工具请求并等待调用结果。 */
     private async requestCanvasTool(name: ToolName, input: Record<string, unknown>) {
         return await this.requestClientTool(this.targetClientId, name, input);
     }
 
-    /** 向指定网页客户端发送工具请求并等待结果；请求先进入该客户端的 FIFO 队列，超时按工具类别区分。 */
+    /** 向指定网页客户端发送工具请求并等待调用结果。 */
     private async requestClientTool(clientId: string, name: ToolName, input: Record<string, unknown>) {
-        const task = () => this.sendToolRequest(clientId, name, input);
-        const previous = this.queues.get(clientId) || Promise.resolve();
-        const result = previous.then(task, task);
-        this.queues.set(clientId, result.catch(() => undefined));
-        return await result;
-    }
-
-    private async sendToolRequest(clientId: string, name: ToolName, input: Record<string, unknown>) {
         const requestId = crypto.randomUUID();
         const client = this.clients.get(clientId);
-        if (!client) throw new BridgeToolError("executor_offline", "当前没有已连接画布", "请先打开画布页面 http://localhost:5070");
+        if (!client) throw new Error("当前没有已连接画布");
         sendEvent(client, "tool_call", { requestId, name, input });
-        logger.debug("Canvas tool request sent", { requestId, name, clientId });
-        const timeoutMs = STATUS_TOOLS.has(name) ? STATUS_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
+        logger.debug("Canvas tool request sent", { requestId, name, input, clientId });
+        const timeoutMs = 30000;
         return await new Promise((resolve, reject) => {
             const timer = setTimeout(() => {
                 this.pending.delete(requestId);
-                logger.warn("Canvas tool request timed out", { requestId, name, clientId, timeoutMs });
-                reject(new BridgeToolError("tool_timeout", `画布操作超时（${Math.round(timeoutMs / 1000)}s）：${name}`, "生成/导出类操作是异步的，可用 generation_get_status 等状态工具查询进度"));
+                logger.warn("Canvas tool request timed out", { requestId, name, clientId });
+                reject(new Error("画布操作超时"));
             }, timeoutMs);
             this.pending.set(requestId, { clientId, resolve: (value) => (clearTimeout(timer), resolve(value)), reject: (error) => (clearTimeout(timer), reject(error)) });
         });
     }
-
-    /** 结构化工具调用日志 + 删除类操作审计，落盘 data/logs/ 供 harness 排错。 */
-    private recordToolLog(entry: { name: ToolName; input: unknown; startedAt: number; status: "ok" | "error"; error?: unknown }) {
-        const summary = summarizeInput(entry.input);
-        logger.info("Tool call finished", { name: entry.name, status: entry.status, durationMs: Date.now() - entry.startedAt });
-        appendToolLog("tool-calls.jsonl", {
-            time: new Date().toISOString(),
-            tool: entry.name,
-            input: summary,
-            durationMs: Date.now() - entry.startedAt,
-            status: entry.status,
-            ...(entry.error instanceof Error ? { error: entry.error.message, code: entry.error instanceof BridgeToolError ? entry.error.code : undefined } : {}),
-        });
-        const deleted = deletedTargets(entry.name, entry.input);
-        if (deleted) {
-            appendToolLog("tool-audit.jsonl", { time: new Date().toISOString(), tool: entry.name, deleted, status: entry.status });
-        }
-    }
 }
 
-/** 提取删除类操作的删除目标（节点/对象/关键帧 ID），无删除时返回 null。 */
-function deletedTargets(name: ToolName, input: unknown): string[] | null {
-    if (DELETE_TOOLS.has(name)) {
-        const data = (input || {}) as { ids?: unknown; shotNodeIds?: unknown; objectId?: unknown; cameraId?: unknown; keyframeId?: unknown };
-        const ids = [data.ids, data.shotNodeIds].flatMap((value) => Array.isArray(value) ? value.map(String) : []);
-        return ids;
+/** 为运行中 turn 的可重放事件生成稳定键。 */
+function codexReplayKey(type: string, payload: Record<string, unknown>) {
+    const turnId = String(payload.turnId || payload.turn_id || "");
+    if (type === "chat_message") {
+        const message = recordValue(payload.message);
+        const clientMessageId = String(message.clientMessageId || "");
+        if (clientMessageId) return `chat:${clientMessageId}`;
+        const messageId = String(message.itemId || message.id || "");
+        return messageId ? `chat:${turnId}:${messageId}` : "";
     }
-    if (name === "canvas_apply_ops" && input && typeof input === "object") {
-        const ops = Array.isArray((input as { ops?: unknown }).ops) ? (input as { ops: Array<{ type?: unknown; id?: unknown; ids?: unknown }> }).ops : [];
-        const ids = ops.filter((op) => op?.type === "delete_node" || op?.type === "delete_connections").flatMap((op) => [op.id, ...(Array.isArray(op.ids) ? op.ids.map(String) : [])]).filter(Boolean).map(String);
-        return ids.length ? ids : null;
-    }
-    return null;
+    if (type === "agent_error") return `error:${turnId}`;
+    if (type !== "agent_event") return "";
+    const item = recordValue(payload.item);
+    if (item.id) return `item:${turnId}:${String(item.id)}`;
+    const eventType = String(payload.type || "");
+    if (eventType === "plan.updated") return `plan:${turnId}`;
+    if (eventType === "usage.updated") return `usage:${turnId}`;
+    if (eventType === "turn.completed" || eventType === "error") return `${eventType}:${turnId}`;
+    return "";
 }
 
-/** 压缩工具入参用于日志：仅保留主要字段并截断长文本。 */
-function summarizeInput(input: unknown): Record<string, unknown> {
-    if (!input || typeof input !== "object" || Array.isArray(input)) return {};
-    const result: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
-        if (value === undefined) continue;
-        if (typeof value === "string") result[key] = value.length > 200 ? `${value.slice(0, 200)}...` : value;
-        else if (Array.isArray(value)) result[key] = value.length > 20 ? `Array(${value.length})` : value;
-        else if (value && typeof value === "object") result[key] = `Object(${Object.keys(value).length})`;
-        else result[key] = value;
-    }
-    return result;
-}
-
-function delay(ms: number) {
-    return new Promise<void>((resolve) => setTimeout(resolve, ms));
+function recordValue(value: unknown) {
+    return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 /** 向 SSE 连接写入一个事件。 */
 function sendEvent(res: ServerResponse, type: string, payload: unknown) {
     res.write(`event: ${type}\ndata: ${JSON.stringify(payload)}\n\n`);
+}
+/** 将未知数值转换为正数，否则使用默认值。 */
+function positiveNumber(value: unknown, fallback: number) {
+    const number = Number(value);
+    return Number.isFinite(number) && number > 0 ? number : fallback;
 }

@@ -36,8 +36,6 @@ Connect token: xxxxxx
 
 在画布右上角点击 `Agent`，填入地址和 token 后连接。
 
-Codex app 插件会读取启动输出里的 Local URL 和 Connect token，并直接打开画布网页地址；Canvas Agent 不负责生成画布打开 URL。
-
 Canvas Agent 默认只监听 `127.0.0.1`。网页第一次带正确 token 连接后，Canvas Agent 会记录该网页 Origin；之后其他 Origin 不能复用这个本地 Agent，除非用户清理 `~/.infinite-canvas/canvas-agent.json` 里的 `origins`。
 
 ## 发布
@@ -50,41 +48,13 @@ Canvas Agent 默认只监听 `127.0.0.1`。网页第一次带正确 token 连接
 
 如果希望 Codex 终端能直接操作画布，需要先把 Canvas Agent 注册成 Codex MCP。
 
-直接运行 `npx -y @basketikun/canvas-agent@latest` 只启动本地 Agent 服务，不会安装 MCP，也不会增加 Codex 工具上下文。只有安装 Codex app 插件，或手动执行 `codex mcp add` 后，`infinite-canvas` 工具才会进入 Codex 上下文；由于工具较多，不使用时建议移除。
-
-通过插件安装时移除插件：
-
-```bash
-codex plugin remove infinite-canvas
-```
-
-手动添加 MCP 时移除 MCP：
+直接运行 `npx -y @basketikun/canvas-agent@latest` 只启动本地 Agent 服务，不会安装 MCP，也不会增加 Codex 工具上下文。只有手动执行 `codex mcp add` 后，`infinite-canvas` 工具才会进入 Codex 上下文；由于工具较多，不使用时建议移除：
 
 ```bash
 codex mcp remove infinite-canvas
 ```
 
-### Codex app 插件
-
-仓库内提供了 Codex app 插件：`plugins/infinite-canvas`。在 Codex app 中添加本仓库的 marketplace 后，可以安装 `Infinite Canvas` 插件；插件会注册同一个 `infinite-canvas` MCP，并带上画布操作说明。
-
-添加本地 marketplace 时建议使用仓库绝对路径，避免 Codex 从其他工作目录解析失败：
-
-```bash
-cd /path/to/infinite-canvas
-codex plugin marketplace add "$(pwd)"
-codex plugin add infinite-canvas@infinite-canvas-local
-```
-
-插件默认通过 npm 启动 MCP；这个命令只提供 MCP 工具，不会把 MCP 写入全局配置，也不会在退出时自动卸载：
-
-```bash
-npx -y @basketikun/canvas-agent@latest mcp
-```
-
-使用时可以直接在 Codex 里说“打开 Infinite Canvas”，插件会启动本地 Agent，读取 Local URL 和 Connect token，然后在右侧打开 `https://canvas.best/` 并自动新建、连接画布；只有明确要求使用本地项目时才会启动本地前端。
-
-Canvas Agent 启动后，给 Codex 添加 MCP：
+给 Codex 添加 MCP：
 
 ```bash
 codex mcp add infinite-canvas -- npx -y @basketikun/canvas-agent@latest mcp

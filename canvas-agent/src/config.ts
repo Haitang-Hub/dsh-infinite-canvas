@@ -6,12 +6,51 @@ import path from "node:path";
 export const DEFAULT_PORT = 17371;
 export const CONFIG_DIR = path.join(os.homedir(), ".infinite-canvas");
 export const CONFIG_FILE = path.join(CONFIG_DIR, "canvas-agent.json");
-export const TOKEN_FILE = path.join(CONFIG_DIR, "token");
+export const CODEX_CONFIG_FILE = path.join(os.homedir(), ".codex", "config.toml");
+let pinnedCodexModelCache: string | null | undefined;
+
+/**
+ * 读取 ~/.codex/config.toml 中自定义 model_provider 固定的模型。
+ * 仅当 provider 不是内置 openai 且显式配置了 model 时返回模型名，
+ * 让网页端模型列表和 turn 请求与本地 Codex 配置保持一致，进程内只读取一次。
+ */
+export function getPinnedCodexModel(): string | undefined {
+    if (pinnedCodexModelCache !== undefined) return pinnedCodexModelCache ?? undefined;
+    pinnedCodexModelCache = null;
+    try {
+        const scalars = parseTopLevelTomlScalars(fs.readFileSync(CODEX_CONFIG_FILE, "utf8"));
+        const provider = scalars.model_provider;
+        const model = scalars.model?.trim();
+        if (provider && provider !== "openai" && model) pinnedCodexModelCache = model;
+    } catch {
+        // 没有 Codex 配置文件时按默认 OpenAI 目录处理。
+    }
+    return pinnedCodexModelCache ?? undefined;
+}
+
+/** 只提取 TOML 顶层 key = "value" 形式的字符串标量，忽略注释和各个 [section]。 */
+function parseTopLevelTomlScalars(text: string): Record<string, string> {
+    const result: Record<string, string> = {};
+    let passedFirstTable = false;
+    for (const rawLine of text.split(/\r?\n/)) {
+        const line = rawLine.trim();
+        if (/^\[[^\]]*]$/.test(line)) {
+            passedFirstTable = true;
+            continue;
+        }
+        if (passedFirstTable || !line || line.startsWith("#")) continue;
+        const match = line.match(/^([A-Za-z0-9_-]+)\s*=\s*"([^"]*)"/);
+        if (match) result[match[1]] = match[2];
+    }
+    return result;
+}
 
 export const VERSION = readPackageVersion();
-export const AGENT_PROMPT = fs.readFileSync(new URL("../mcp-instructions.md", import.meta.url), "utf8");
+export const AGENT_PROMPT = fs.readFileSync(new URL("../agent-instructions.md", import.meta.url), "utf8");
+const initializedWorkspaces = new Set<string>();
 
-export type CanvasAgentConfig = { url: string; token: string; origins?: string[] };
+export type SiteWorkspaceConfig = { workspacePath: string; activeThreadId?: string; pinnedThreadIds?: string[] };
+export type CanvasAgentConfig = { url: string; token: string; origins?: string[]; workspace?: SiteWorkspaceConfig };
 
 /** 读取本地 Canvas Agent 配置，不存在时生成默认配置。 */
 export function loadConfig(create = false): CanvasAgentConfig {
@@ -37,14 +76,47 @@ export function writeConfigFile(dir: string, file: string, config: CanvasAgentCo
     fs.chmodSync(file, 0o600);
 }
 
-/** 把本机 token 同步写入纯文本 token 文件，供 MCP 进程与页面发现接口读取。 */
-export function writeTokenFile(token: string) {
-    try {
-        fs.mkdirSync(CONFIG_DIR, { recursive: true });
-        fs.writeFileSync(TOKEN_FILE, token, { mode: 0o600 });
-    } catch {
-        // token 文件写失败不影响服务运行；/bootstrap 与配置文件仍是可用通道。
+/** 确保站点级 Codex 工作空间存在并已初始化。 */
+export function ensureSiteWorkspace(config: CanvasAgentConfig) {
+    const current = config.workspace;
+    if (current?.workspacePath) {
+        const workspacePath = resolveWorkspacePath(current.workspacePath);
+        initializeWorkspace(workspacePath);
+        return { ...current, workspacePath };
     }
+    const workspacePath = path.join(CONFIG_DIR, "codex-workspaces", "site");
+    config.workspace = { workspacePath };
+    initializeWorkspace(workspacePath);
+    saveConfig(config);
+    return { workspacePath };
+}
+
+/** 更新站点级 Codex 工作空间配置。 */
+export function updateSiteWorkspace(config: CanvasAgentConfig, patch: Partial<SiteWorkspaceConfig>) {
+    const current = ensureSiteWorkspace(config);
+    const workspacePath = patch.workspacePath ? resolveWorkspacePath(patch.workspacePath) : current.workspacePath;
+    const next = { ...current, ...patch, workspacePath };
+    config.workspace = { workspacePath: next.workspacePath, activeThreadId: next.activeThreadId, pinnedThreadIds: next.pinnedThreadIds };
+    initializeWorkspace(workspacePath);
+    saveConfig(config);
+    return config.workspace;
+}
+
+/** 创建工作空间目录并写入默认 AGENTS.md。 */
+function initializeWorkspace(workspacePath: string) {
+    if (initializedWorkspaces.has(workspacePath)) return;
+    fs.mkdirSync(workspacePath, { recursive: true });
+    const instructionsFile = path.join(workspacePath, "AGENTS.md");
+    const current = fs.existsSync(instructionsFile) ? fs.readFileSync(instructionsFile, "utf8") : "";
+    if (!current || current.startsWith("# Infinite Canvas Agent")) fs.writeFileSync(instructionsFile, AGENT_PROMPT);
+    initializedWorkspaces.add(workspacePath);
+}
+
+/** 将用户输入的工作空间路径解析为绝对路径。 */
+function resolveWorkspacePath(value: string) {
+    if (value === "~") return os.homedir();
+    if (value.startsWith("~/")) return path.join(os.homedir(), value.slice(2));
+    return path.resolve(value);
 }
 
 /** 从当前包信息中读取 Canvas Agent 版本号。 */

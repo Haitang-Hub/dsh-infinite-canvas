@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BookOpen, Download, Home, Images, Menu, PanelLeftClose, PanelLeftOpen, Plus, Redo2, Trash2, Undo2, Upload } from "lucide-react";
+import { Download, Home, Menu, PanelLeftClose, PanelLeftOpen, Plus, Redo2, Trash2, Undo2, Upload } from "lucide-react";
 import { Button, Dropdown, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
@@ -7,9 +7,7 @@ import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@/stores/use-theme-store";
-import { useBridgeStore } from "@/stores/use-bridge-store";
-import { useOpenAiAssistant } from "@/components/ai-assistant/ai-assistant";
-import { DOCS_URL } from "@/constant/env";
+import { useAgentStore } from "@/stores/use-agent-store";
 
 export function CanvasTopBar({
     title,
@@ -22,7 +20,6 @@ export function CanvasTopBar({
     canUndo,
     canRedo,
     onHome,
-    onProjects,
     onCreateProject,
     onDeleteProject,
     onExportProject,
@@ -41,7 +38,6 @@ export function CanvasTopBar({
     canUndo: boolean;
     canRedo: boolean;
     onHome: () => void;
-    onProjects: () => void;
     onCreateProject: () => void;
     onDeleteProject: () => void;
     onExportProject: () => void;
@@ -87,8 +83,6 @@ export function CanvasTopBar({
                         menu={{
                             items: [
                                 { key: "home", icon: <Home className="size-4" />, label: t("canvas.home"), onClick: onHome },
-                                { key: "docs", icon: <BookOpen className="size-4" />, label: t("canvas.docs"), onClick: () => window.open(DOCS_URL, "_blank", "noopener,noreferrer") },
-                                { key: "projects", icon: <Images className="size-4" />, label: t("canvas.projects"), onClick: onProjects },
                                 { type: "divider" },
                                 { key: "new", icon: <Plus className="size-4" />, label: t("canvas.create"), onClick: onCreateProject },
                                 { key: "delete", danger: true, icon: <Trash2 className="size-4" />, label: t("canvas.deleteCurrent"), onClick: onDeleteProject },
@@ -174,14 +168,15 @@ function CompactBridgeStatus() {
     const colorTheme = useThemeStore((state) => state.theme);
     const theme = canvasThemes[colorTheme];
     const { t } = useTranslation();
-    const connected = useBridgeStore((state) => state.connected);
-    const executing = useBridgeStore((state) => state.executing);
-    const openAiAssistant = useOpenAiAssistant();
-    const label = t(executing ? "agent.status.executing" : connected ? "canvas.agentConnected" : "canvas.agentDisconnected");
-    const dotColor = executing ? "#f59e0b" : connected ? "#22c55e" : theme.node.muted;
+    const connected = useAgentStore((state) => state.connected);
+    const enabled = useAgentStore((state) => state.enabled);
+    const busy = useAgentStore((state) => state.sending || state.waiting);
+    const openAgentPanel = useAgentStore((state) => state.openPanel);
+    const label = t(busy ? "agent.status.executing" : connected ? "canvas.agentConnected" : "canvas.agentDisconnected");
+    const dotColor = busy ? "#f59e0b" : connected ? "#22c55e" : theme.node.muted;
     return (
-        <button type="button" className="flex h-8 cursor-pointer items-center gap-1.5 text-xs transition hover:opacity-75" style={{ color: executing ? "#d97706" : connected ? "#16a34a" : theme.node.muted }} title={t("canvas.bridgeStatus")} aria-label={label} onClick={openAiAssistant}>
-            <span className={`size-2 rounded-full ${executing ? "animate-pulse" : ""}`} style={{ background: dotColor }} />
+        <button type="button" className="flex h-8 cursor-pointer items-center gap-1.5 text-xs transition hover:opacity-75" style={{ color: busy ? "#d97706" : connected ? "#16a34a" : theme.node.muted }} title={t(enabled ? "agent.status.connectedTooltip" : "agent.status.disconnectedTooltip")} aria-label={label} onClick={openAgentPanel}>
+            <span className={`size-2 rounded-full ${busy ? "animate-pulse" : ""}`} style={{ background: dotColor }} />
             <span className="max-w-[140px] truncate">{label}</span>
         </button>
     );
