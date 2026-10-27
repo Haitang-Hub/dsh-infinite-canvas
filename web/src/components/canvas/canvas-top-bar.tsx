@@ -1,16 +1,18 @@
 import { useEffect, useRef, useState } from "react";
-import { Download, Home, Menu, PanelLeftClose, PanelLeftOpen, Plus, Redo2, Trash2, Undo2, Upload } from "lucide-react";
+import { Download, FolderOpen, Menu, PanelLeftClose, PanelLeftOpen, Plus, Redo2, Trash2, Undo2, Upload } from "lucide-react";
 import { Button, Dropdown, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { canvasThemes } from "@/lib/canvas-theme";
+import { formatProjectNo } from "@/stores/canvas/use-canvas-store";
 import { useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useAgentStore } from "@/stores/use-agent-store";
 
 export function CanvasTopBar({
     title,
+    projectNo,
     titleDraft,
     isTitleEditing,
     onTitleDraftChange,
@@ -19,16 +21,18 @@ export function CanvasTopBar({
     onCancelTitleEditing,
     canUndo,
     canRedo,
-    onHome,
+    onOpenProjectDirectory,
     onCreateProject,
     onDeleteProject,
     onExportProject,
     onImportImage,
+    onImportCanvas,
     onOpenPlugins,
     onUndo,
     onRedo,
 }: {
     title: string;
+    projectNo?: number;
     titleDraft: string;
     isTitleEditing: boolean;
     onTitleDraftChange: (value: string) => void;
@@ -37,11 +41,12 @@ export function CanvasTopBar({
     onCancelTitleEditing: () => void;
     canUndo: boolean;
     canRedo: boolean;
-    onHome: () => void;
+    onOpenProjectDirectory: () => void;
     onCreateProject: () => void;
     onDeleteProject: () => void;
     onExportProject: () => void;
     onImportImage: () => void;
+    onImportCanvas: () => void;
     onOpenPlugins: () => void;
     onUndo: () => void;
     onRedo: () => void;
@@ -82,12 +87,13 @@ export function CanvasTopBar({
                         trigger={["click"]}
                         menu={{
                             items: [
-                                { key: "home", icon: <Home className="size-4" />, label: t("canvas.home"), onClick: onHome },
+                                { key: "directory", icon: <FolderOpen className="size-4" />, label: t("canvas.directory.title"), onClick: onOpenProjectDirectory },
                                 { type: "divider" },
                                 { key: "new", icon: <Plus className="size-4" />, label: t("canvas.create"), onClick: onCreateProject },
                                 { key: "delete", danger: true, icon: <Trash2 className="size-4" />, label: t("canvas.deleteCurrent"), onClick: onDeleteProject },
                                 { type: "divider" },
                                 { key: "import", icon: <Upload className="size-4" />, label: t("canvas.importAsset"), onClick: onImportImage },
+                                { key: "importCanvas", icon: <FolderOpen className="size-4" />, label: t("canvas.import"), onClick: onImportCanvas },
                                 { key: "export", icon: <Download className="size-4" />, label: t("canvas.exportCurrent"), onClick: onExportProject },
                                 { type: "divider" },
                                 { key: "undo", disabled: !canUndo, icon: <Undo2 className="size-4" />, label: <MenuLabel text={t("canvas.undo")} shortcut="⌘ Z" />, onClick: onUndo },
@@ -117,11 +123,12 @@ export function CanvasTopBar({
                         ) : (
                             <button
                                 type="button"
-                                className="max-w-[280px] truncate border-b border-dashed border-transparent text-left text-lg font-semibold tracking-normal transition hover:border-current"
+                                className="flex max-w-[340px] items-baseline gap-1.5 truncate border-b border-dashed border-transparent text-left text-lg font-semibold tracking-normal transition hover:border-current"
                                 onDoubleClick={onStartTitleEditing}
                                 title={t("canvas.renameHint")}
                             >
-                                {title}
+                                <span className="shrink-0 font-mono text-xs font-normal opacity-45">{formatProjectNo(projectNo)}</span>
+                                <span className="truncate">{title}</span>
                             </button>
                         )}
                     </div>

@@ -49,6 +49,7 @@ import { useAgentStore } from "@/stores/use-agent-store";
 import { usePluginHost } from "@/pages/canvas/hooks/use-plugin-host";
 import { buildNodeMentionReferences, getGroupResourceNodes, isCanvasReferenceNode, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { exportCanvasProjects } from "@/lib/canvas/canvas-export";
+import { importCanvasProjectsZip } from "@/lib/canvas/canvas-import";
 import { applyNodeConfigPatch, audioMetadata, buildAudioGenerationMetadata, buildImageGenerationMetadata, createCanvasNode, imageMetadata, videoMetadata } from "@/lib/canvas/canvas-node-factory";
 import { applyGroupSelection, applyUngroupSelection, canGroupSelectedNodes, canUngroupSelectedNodes, collectGroupMemberNodes, findContainingGroupId, findGroupDropTarget, getConnectionTargetAnchor, getGroupWrapRect, normalizeConnection, snapNodesIntoGroup } from "@/lib/canvas/canvas-node-geometry";
 import { focusViewportForNode, type FocusFrame } from "@/lib/canvas/canvas-node-geometry";
@@ -76,6 +77,7 @@ import { registerBuiltinNodes } from "@/components/canvas/nodes/builtin-nodes";
 import { CanvasPluginManagerModal } from "@/components/canvas/canvas-plugin-manager-modal";
 import { CanvasRefreshShell } from "@/components/canvas/canvas-refresh-shell";
 import { CanvasTopBar } from "@/components/canvas/canvas-top-bar";
+import { CanvasProjectDirectory } from "@/components/canvas/canvas-project-directory";
 import { ConnectionCreateMenu, NodeCreateMenu, type PendingConnectionCreate } from "@/components/canvas/canvas-create-menus";
 import {
     CanvasNodeType,
@@ -176,9 +178,22 @@ function InfiniteCanvasPage() {
     const params = useParams<{ id: string }>();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
-    const projectId = params.id || "";
+    // URL 同时接受工程 id 与编号（如 /canvas/0001），统一解析为内部 id。
+    const storeProjects = useCanvasStore((state) => state.projects);
+    const projectId = useMemo(() => {
+        const rawId = params.id || "";
+        if (!rawId) return "";
+        const byId = storeProjects.find((project) => project.id === rawId);
+        if (byId) return byId.id;
+        if (/^\d+$/.test(rawId)) {
+            const no = Number(rawId);
+            return storeProjects.find((project) => project.no === no)?.id || "";
+        }
+        return "";
+    }, [params.id, storeProjects]);
     const containerRef = useRef<HTMLDivElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
+    const canvasImportInputRef = useRef<HTMLInputElement>(null);
     const uploadTargetRef = useRef<{ nodeId?: string; position?: Position } | null>(null);
     const clipboardRef = useRef<CanvasClipboard | null>(null);
     const historyRef = useRef<{ past: CanvasHistoryEntry[]; future: CanvasHistoryEntry[] }>({ past: [], future: [] });
@@ -213,6 +228,7 @@ function InfiniteCanvasPage() {
     const hydrated = useCanvasStore((state) => state.hydrated);
     const createProject = useCanvasStore((state) => state.createProject);
     const openProject = useCanvasStore((state) => state.openProject);
+    const setLastProjectId = useCanvasStore((state) => state.setLastProjectId);
     const updateProject = useCanvasStore((state) => state.updateProject);
     const renameProject = useCanvasStore((state) => state.renameProject);
     const deleteProjects = useCanvasStore((state) => state.deleteProjects);
@@ -257,6 +273,7 @@ function InfiniteCanvasPage() {
     const [previewImageId, setPreviewImageId] = useState<string | null>(null);
     const [titleEditing, setTitleEditing] = useState(false);
     const [titleDraft, setTitleDraft] = useState("");
+    const [projectDirectoryOpen, setProjectDirectoryOpen] = useState(false);
     const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
     const [expandedBatchNodeIds, setExpandedBatchNodeIds] = useState<Set<string>>(new Set());
     const [isNodeDragging, setIsNodeDragging] = useState(false);
@@ -431,12 +448,17 @@ function InfiniteCanvasPage() {
 
     useEffect(() => {
         if (!hydrated) return;
+        if (!projectId) {
+            navigate("/", { replace: true });
+            return;
+        }
         setProjectLoaded(false);
         const project = openProject(projectId);
         if (!project) {
-            navigate("/canvas", { replace: true });
+            navigate("/", { replace: true });
             return;
         }
+        setLastProjectId(project.id);
 
         const restore = async () => {
             const restoredNodes = await hydrateCanvasImages(resetInterruptedGeneration(project.nodes));
@@ -465,7 +487,7 @@ function InfiniteCanvasPage() {
             setProjectLoaded(true);
         };
         void restore();
-    }, [hydrated, navigate, openProject, projectId]);
+    }, [hydrated, navigate, openProject, projectId, setLastProjectId]);
 
     useEffect(() => {
         if (!projectLoaded) return;
@@ -1199,7 +1221,7 @@ function InfiniteCanvasPage() {
     const deleteCurrentProject = useCallback(() => {
         deleteProjects([projectId]);
         cleanupAssetImages();
-        navigate("/canvas");
+        navigate("/");
     }, [cleanupAssetImages, deleteProjects, navigate, projectId]);
 
     const exportCurrentProject = useCallback(async () => {
@@ -1216,6 +1238,18 @@ function InfiniteCanvasPage() {
             hide();
         }
     }, [message, projectId, t]);
+
+    const importCanvasFile = useCallback(async (file?: File) => {
+        if (!file) return;
+        try {
+            const count = await importCanvasProjectsZip(file);
+            message.success(t("canvas.imported", { count }));
+        } catch {
+            message.error(t("canvas.importFailed"));
+        } finally {
+            if (canvasImportInputRef.current) canvasImportInputRef.current.value = "";
+        }
+    }, [message, t]);
 
     const handleCanvasMouseDown = useCallback(
         (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -3189,6 +3223,7 @@ function InfiniteCanvasPage() {
             <section className="relative min-w-0 flex-1 overflow-hidden">
                 <CanvasTopBar
                     title={currentProject?.title || t("canvas.projectPage.untitledCanvas")}
+                    projectNo={currentProject?.no}
                     titleDraft={titleDraft}
                     isTitleEditing={titleEditing}
                     onTitleDraftChange={setTitleDraft}
@@ -3197,11 +3232,12 @@ function InfiniteCanvasPage() {
                     onCancelTitleEditing={() => setTitleEditing(false)}
                     canUndo={historyState.canUndo}
                     canRedo={historyState.canRedo}
-                    onHome={() => navigate("/")}
+                    onOpenProjectDirectory={() => setProjectDirectoryOpen(true)}
                     onCreateProject={createAndOpenProject}
                     onDeleteProject={deleteCurrentProject}
                     onExportProject={exportCurrentProject}
                     onImportImage={() => handleUploadRequest()}
+                    onImportCanvas={() => canvasImportInputRef.current?.click()}
                     onOpenPlugins={() => setPluginManagerOpen(true)}
                     onUndo={undoCanvas}
                     onRedo={redoCanvas}
@@ -3438,6 +3474,8 @@ function InfiniteCanvasPage() {
 
                 <CanvasNodeInfoModal node={infoNode} open={Boolean(infoNode)} onClose={() => setInfoNodeId(null)} />
                 <CanvasPluginManagerModal open={pluginManagerOpen} onClose={() => setPluginManagerOpen(false)} />
+                <CanvasProjectDirectory open={projectDirectoryOpen} onClose={() => setProjectDirectoryOpen(false)} currentProjectId={projectId} />
+                <input ref={canvasImportInputRef} type="file" accept="application/zip,.zip" className="hidden" onChange={(event) => void importCanvasFile(event.target.files?.[0])} />
 
                 {cropNode?.metadata?.content ? <CanvasNodeCropDialog dataUrl={cropNode.metadata.content} open={Boolean(cropNode)} onClose={() => setCropNodeId(null)} onConfirm={(crop) => void cropImageNode(cropNode!, crop)} /> : null}
 
