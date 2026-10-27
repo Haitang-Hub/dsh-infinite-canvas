@@ -1,5 +1,5 @@
 node_modules/
-dist/
+*.tgz
 data/
 *.log
 .DS_Store
