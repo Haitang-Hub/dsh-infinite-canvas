@@ -39,7 +39,7 @@ executor = 面板 iframe 里的画布页面（经 /bootstrap 零配置拿到本�
 ├── cordis.patch.yml      # 服务端入口条目 + dsh-mcp-client 条目
 ├── dsh/index.js          # 服务端入口：托管桥（复用/拉起/心跳/手动重启）+ bridge-info
 ├── lib/client.js         # 客户端单文件（右侧栏标签：工具栏 + 画布 iframe）
-├── scripts/sync-assets.mjs  # 打包前同步 bridge/（canvas-agent dist-bundle）与 site/（web/dist）
+├── scripts/sync-assets.mjs  # 打包前同步 bridge/（canvas-agent dist-bundle）与 site/（web/dist）；main 产物分支无源码时跳过并提示
 ├── bridge/               # esbuild 单文件桥运行时（构建产物，随 release 更新入库）
 ├── site/                 # 画布前端构建产物（web/dist，随 release 更新入库）
 └── docs/bridge-protocol.md  # 桥协议规范（与 3d-director-desk 共享）
@@ -95,6 +95,8 @@ dsh plugin --profile web add /绝对路径/dsh-infinite-canvas-x.y.z.tgz
 
 产物更新到本分支：把新生成的 `bridge/`、`site/` 覆盖到仓库根并提交（对齐
 `dsh-3d-director-desk` 的 release 流程），`.tgz` 走 GitHub Releases 分发、不入库。
+也可在 `main` 上设 `CANVAS_PLUGIN_SOURCE_ROOT=<full 检出目录>` 后 `npm run sync`
+直接从 full 检出拉取产物。
 
 改端口时只设一处：`CANVAS_AGENT_PORT=18000`（Harness 进程环境），patch 的 url 与
 插件 `Config.port` 同步生效。
