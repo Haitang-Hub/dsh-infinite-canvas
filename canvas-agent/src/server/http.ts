@@ -3,7 +3,6 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 
-import { runClaudeTurn } from "../agent/claude.js";
 import { channelModelConfig, channelModels, interruptChannelTurn, runChannelTurn } from "../agent/channel-agent.js";
 import { createChannelThread, deleteChannelThread, listChannelThreads, readChannelThread } from "../agent/channel-threads.js";
 import { messageMetadataStore } from "../agent/message-metadata.js";
@@ -11,8 +10,8 @@ import type { AgentAttachment } from "../agent/types.js";
 import { AGENT_PROTOCOL_VERSION, CanvasSession } from "../canvas/session.js";
 import { DEFAULT_PORT, ensureSiteWorkspace, loadConfig, saveConfig, updateSiteWorkspace, type CanvasAgentConfig } from "../config.js";
 import { logger } from "../utils/logger.js";
-import { checkVersions } from "../version-check.js";
 import { SkillStore, SkillStoreError } from "../skills/store.js";
+import { registerMcpHttpEndpoint } from "./mcp-http.js";
 
 /** 启动仅监听本机的 Canvas Agent HTTP 服务。 */
 export function startHttpServer() {
@@ -24,30 +23,6 @@ export function startHttpServer() {
     const initialWorkspace = ensureSiteWorkspace(config);
     const session = new CanvasSession(initialWorkspace.activeThreadId || "");
     const skillStore = new SkillStore(initialWorkspace.workspacePath);
-    /** 将 Agent 事件广播到所属线程或全部网页。 */
-    const emit = (type: string, payload: unknown) => {
-        const value = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : { value: payload };
-        if (type === "skills_changed") {
-            session.emitAll(type, value);
-            return;
-        }
-        if (type === "agent_bootstrap" && value.phase === "preheat") {
-            if (value.type === "mcp.startup") session.updateConversationMcp(String(value.name || ""), startupStatus(value.status), String(value.error || "") || null, String(value.failureReason || "") || null);
-            if (value.type === "mcp.complete") session.completeConversationMcpInventory(mcpInventory(value.services));
-        }
-        const scope = session.codexBusy ? session.codexEventScope : { threadId: "", turnId: "", sourceClientId: "" };
-        const threadId = String(value.threadId || value.thread_id || scope.threadId || ensureSiteWorkspace(config).activeThreadId || "");
-        const turnId = String(value.turnId || value.turn_id || scope.turnId || "");
-        const sourceClientId = String(value.sourceClientId || scope.sourceClientId || "");
-        const data = {
-            ...value,
-            ...(threadId ? { threadId, thread_id: threadId } : {}),
-            ...(turnId ? { turnId, turn_id: turnId } : {}),
-            ...(sourceClientId ? { sourceClientId } : {}),
-        };
-        session.trackCodexEvent(type, data);
-        threadId ? session.emitThread(type, threadId, data) : session.emitAll(type, data);
-    };
     /** 保存并广播当前站点工作空间的活跃线程。 */
     const setActiveThread = (activeThreadId: string, payload: Record<string, unknown> = {}, preserveConversation = false) => {
         const workspace = updateSiteWorkspace(config, { activeThreadId: activeThreadId || undefined });
@@ -77,6 +52,24 @@ export function startHttpServer() {
     });
     app.get("/health", (_req, res) => res.json(session.health()));
     app.get("/config", (_req, res) => res.json({ ok: true, protocolVersion: AGENT_PROTOCOL_VERSION, url: config.url, hasToken: true }));
+    // 零配置发现：本机回环端点向同源页面下发连接配置（web 端 bridge-config.ts 消费）。
+    app.get("/bootstrap", (_req, res) => res.json({ ok: true, url: config.url, token: config.token }));
+    // Harness 直连的 streamable-http MCP 门面：与 /health 一样位于 token 中间件之前，回环之外不可达。
+    registerMcpHttpEndpoint(app, (name, input) => session.callTool(name, input));
+    // 插件托管形态：CANVAS_SITE_DIR 指向 web/dist，由桥直接伺服画布站点（与 director-desk
+    // 同口径：站点公开、API 鉴权）；未知 GET 路径回退 index.html（BrowserRouter 深链）。
+    // 必须在 token 中间件之前注册，否则页面连 HTML 都拿不到、无从走 /bootstrap。
+    const siteDir = process.env.CANVAS_SITE_DIR?.trim();
+    if (siteDir) {
+        app.use(express.static(siteDir, { index: "index.html" }));
+        // Express 5 的 path-to-regexp 不接受裸 "*"，用方法判断中间件实现 SPA 回退。
+        app.use((req, res, next) => {
+            if (req.method !== "GET" && req.method !== "HEAD") return next();
+            res.sendFile(path.join(siteDir, "index.html"), (error) => {
+                if (error && !res.headersSent) res.status(404).json({ ok: false, error: "site index.html missing" });
+            });
+        });
+    }
     app.use((req, res, next) => {
         if (validToken(req, requestUrl(req, config), config.token)) return next();
         res.status(401).json({ ok: false, error: "invalid token" });
@@ -306,10 +299,7 @@ export function startHttpServer() {
         const ok = interruptChannelTurn(String(req.body?.threadId || ""));
         res.status(ok ? 200 : 409).json({ ok, ...(ok ? {} : { error: "当前没有可停止的任务" }) });
     }));
-    app.post("/agent/claude/turn", (req, res) => {
-        runClaudeTurn(String(req.body?.prompt || ""), emit);
-        res.json({ ok: true });
-    });
+
     app.use((_req, res) => res.status(404).json({ ok: false, error: "not found" }));
     app.use((error: Error, req: Request, res: Response, _next: NextFunction) => {
         logger.error("HTTP request failed", { method: req.method, path: req.path, error });
@@ -319,12 +309,8 @@ export function startHttpServer() {
 
     app.listen(port, "127.0.0.1", () => {
         console.log("Infinite Canvas Agent");
-        checkVersions();
         console.log(`Local URL: ${config.url}`);
         console.log(`Connect token: ${config.token}`);
-        console.log("Codex MCP is not installed by this command.");
-        console.log("Optional MCP add: codex mcp add infinite-canvas -- npx -y @basketikun/canvas-agent@latest mcp");
-        console.log("Remove manually added MCP: codex mcp remove infinite-canvas");
         if (logger.enabled) console.log(`Debug log: ${logger.filePath}`);
         logger.info("Canvas Agent started", { url: config.url, workspace: ensureSiteWorkspace(config).workspacePath, debugLog: logger.filePath });
         const activeThreadId = initialWorkspace.activeThreadId || "";
@@ -343,22 +329,6 @@ function route(handler: (req: Request, res: Response) => Promise<unknown>) {
 /** 从 Express 路由参数中读取单个字符串。 */
 function routeParam(value: string | string[]) {
     return Array.isArray(value) ? value[0] || "" : value;
-}
-
-
-
-function startupStatus(value: unknown): "starting" | "ready" | "failed" | "cancelled" {
-    return value === "starting" || value === "ready" || value === "failed" ? value : "cancelled";
-}
-
-function mcpInventory(value: unknown) {
-    if (!Array.isArray(value)) return [];
-    return value.flatMap((item) => {
-        if (!item || typeof item !== "object" || Array.isArray(item)) return [];
-        const server = item as Record<string, unknown>;
-        const name = String(server.name || "");
-        return name ? [{ name, authStatus: String(server.authStatus || "") || undefined }] : [];
-    });
 }
 
 /** 使用当前操作系统的文件管理器定位本地文件。 */

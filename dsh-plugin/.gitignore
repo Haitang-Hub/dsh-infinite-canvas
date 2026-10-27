@@ -1,0 +1,4 @@
+bridge/
+site/
+*.tgz
+node_modules/

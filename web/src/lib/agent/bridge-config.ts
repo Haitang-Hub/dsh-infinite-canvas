@@ -16,7 +16,26 @@ export function readStoredBridgeConfig(): BridgeConfig {
     } catch {
         // 隐私模式等场景下 localStorage 不可用时走 /bootstrap 发现。
     }
-    return { url: (url || DEFAULT_BRIDGE_URL).replace(/\/$/, ""), token };
+    return { url: (url || defaultBridgeUrl()).replace(/\/$/, ""), token };
+}
+
+/**
+ * 默认桥地址：插件托管形态下页面由桥本身伺服（同源），直接用当前 origin；
+ * 独立开发态（vite 5070/5075）回退到固定回环端口。
+ */
+function defaultBridgeUrl(): string {
+    try {
+        const { protocol, hostname } = window.location;
+        if (protocol === "http:" || protocol === "https:") {
+            if (hostname === "127.0.0.1" || hostname === "localhost" || hostname === "[::1]") {
+                const port = window.location.port;
+                if (port && !["5070", "5075"].includes(port)) return window.location.origin;
+            }
+        }
+    } catch {
+        // 非浏览器环境（SSR/测试）走默认端口。
+    }
+    return DEFAULT_BRIDGE_URL;
 }
 
 /** 向桥服务请求本机 token（仅本机回环端点），成功后持久化供后续会话使用。 */
@@ -42,11 +61,16 @@ export function persistBridgeConfig(config: BridgeConfig) {
     }
 }
 
-/** 确保拿到可用的桥配置：有 token 直接用，否则请求 /bootstrap 发现。 */
+/** 确保拿到可用的桥配置：有 token 直接用，否则请求 /bootstrap 发现（同源失败再试默认端口）。 */
 export function ensureBridgeConfig(): Promise<BridgeConfig | null> {
     const stored = readStoredBridgeConfig();
     if (stored.token) return Promise.resolve(stored);
-    bootstrapPromise ||= fetchBridgeBootstrap(stored.url).finally(() => {
+    bootstrapPromise ||= (async () => {
+        const viaPreferred = await fetchBridgeBootstrap(stored.url);
+        if (viaPreferred) return viaPreferred;
+        if (stored.url !== DEFAULT_BRIDGE_URL) return fetchBridgeBootstrap(DEFAULT_BRIDGE_URL);
+        return null;
+    })().finally(() => {
         bootstrapPromise = null;
     });
     return bootstrapPromise;

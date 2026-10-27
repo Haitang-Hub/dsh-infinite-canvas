@@ -4,7 +4,13 @@ import os from "node:os";
 import path from "node:path";
 
 export const DEFAULT_PORT = 17371;
-export const CONFIG_DIR = path.join(os.homedir(), ".infinite-canvas");
+/**
+ * 配置与运行数据的落点：默认 ~/.infinite-canvas；被 Harness 插件托管时经
+ * CANVAS_AGENT_HOME 指到 dshHomePath('infinite-canvas')，卸载插件不删数据。
+ */
+export const CONFIG_DIR = path.join(
+    process.env.CANVAS_AGENT_HOME?.trim() || path.join(os.homedir(), ".infinite-canvas"),
+);
 export const CONFIG_FILE = path.join(CONFIG_DIR, "canvas-agent.json");
 export const CODEX_CONFIG_FILE = path.join(os.homedir(), ".codex", "config.toml");
 let pinnedCodexModelCache: string | null | undefined;
@@ -45,8 +51,25 @@ function parseTopLevelTomlScalars(text: string): Record<string, string> {
     return result;
 }
 
+/** 依次尝试多个候选路径读取文本文件（tsc dist 与 esbuild 单文件布局层数不同）。 */
+function readBundledFile(candidates: URL[]): string {
+    for (const candidate of candidates) {
+        try {
+            return fs.readFileSync(candidate, "utf8");
+        } catch {
+            // 尝试下一个布局。
+        }
+    }
+    return "";
+}
+
 export const VERSION = readPackageVersion();
-export const AGENT_PROMPT = fs.readFileSync(new URL("../agent-instructions.md", import.meta.url), "utf8");
+export const AGENT_PROMPT = readBundledFile([
+    // esbuild 单文件布局：bundle 与资源同目录（优先；上层可能是 dsh-plugin 包根，内容不同）。
+    new URL("./agent-instructions.md", import.meta.url),
+    // 源码/dist 布局：本文件位于 src/（或 dist/），资源在包根。
+    new URL("../agent-instructions.md", import.meta.url),
+]);
 const initializedWorkspaces = new Set<string>();
 
 export type SiteWorkspaceConfig = { workspacePath: string; activeThreadId?: string; pinnedThreadIds?: string[] };
@@ -121,9 +144,14 @@ function resolveWorkspacePath(value: string) {
 
 /** 从当前包信息中读取 Canvas Agent 版本号。 */
 function readPackageVersion() {
+    const text = readBundledFile([
+        // esbuild 单文件布局：随 bundle 复制的本包 package.json（优先）。
+        new URL("./package.json", import.meta.url),
+        // 源码/dist 布局：本文件位于 src/（或 dist/），package.json 在包根。
+        new URL("../package.json", import.meta.url),
+    ]);
     try {
-        const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version?: string };
-        return pkg.version || "0.0.0";
+        return JSON.parse(text).version || "0.0.0";
     } catch {
         return "0.0.0";
     }

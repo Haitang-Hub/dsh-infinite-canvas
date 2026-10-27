@@ -16,14 +16,14 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "debug": "tsx src/index.ts --debug",
-    "test": "tsx --test src/config.test.ts src/canvas/operations.test.ts src/canvas/session.test.ts src/agent/codex-client.test.ts src/agent/codex-history.test.ts src/agent/message-metadata.test.ts src/skills/store.test.ts src/utils/agent-runtime.test.ts",
+    "test": "tsx --test src/config.test.ts src/canvas/operations.test.ts src/canvas/session.test.ts src/agent/message-metadata.test.ts src/skills/store.test.ts",
     "build": "tsc -p tsconfig.json",
+    "build:bundle": "node scripts/build-bundle.mjs",
     "start": "node dist/index.js",
     "prepack": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
-    "@openai/codex": "0.146.0",
     "express": "^5.1.0",
     "gray-matter": "^4.0.3",
     "strip-ansi": "7.2.0",
@@ -34,6 +34,7 @@
   "devDependencies": {
     "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
+    "esbuild": "^0.24.0",
     "tsx": "^4.19.0",
     "typescript": "^5.8.0"
   },

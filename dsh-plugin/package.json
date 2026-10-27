@@ -1,0 +1,55 @@
+{
+  "name": "dsh-infinite-canvas",
+  "version": "0.1.0",
+  "description": "无限画布右侧栏插件：画布与对话并排，Agent 经 canvas_* 工具实时操作画布节点、生成与导出。",
+  "type": "module",
+  "main": "./dsh/index.js",
+  "exports": {
+    ".": "./dsh/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "files": [
+    "dsh",
+    "lib",
+    "bridge",
+    "site",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "sync": "node scripts/sync-assets.mjs",
+    "pack:all": "npm run sync && npm pack"
+  },
+  "license": "MIT",
+  "author": "Haitang-Hub",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Haitang-Hub/dsh-infinite-canvas.git"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "workbench",
+    "infinite-canvas",
+    "mcp"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
+      ]
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "3.18.5"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-client-connection": "^0.1.2-rc.1 || ^0.1.7-rc.1 || ^0.1.7-rc.2 || ^0.2.0-rc.1 || ^0.2.1-rc.1"
+  }
+}

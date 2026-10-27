@@ -2,6 +2,7 @@
 
 ## Unreleased
 
++ [新增] DSH Harness 插件化（dsh-plugin/，形态对齐 dsh-3d-director-desk 0.2.3）：`npm run pack:all` 产出 `dsh plugin add` 可装的 tgz，右侧栏标签内嵌画布 iframe，MCP 经 streamable-http `/mcp` 门面注册 `mcp__infinite-canvas__*` 7 工具；插件托管桥进程（8s 心跳自动重建 + 面板手动重启）。为此 canvas-agent 新增：esbuild 单文件桥 `npm run build:bundle`（dist-bundle/，无需 node_modules）、`GET /bootstrap` 零配置 token 发现、`CANVAS_SITE_DIR` 站点伺服 + SPA 回退、`CANVAS_AGENT_HOME` 数据目录重定向；MCP 注册抽为 stdio/http 共用工厂；web 端 bridge-config 同源自动发现桥端点。
 + [修复] 助手建节点无效但报完成：模型按 MCP 风格输出 ops（{"add_node": {...}}）被前端静默忽略——canvas_apply_ops 执行前自动归一化为 {"type": "add_node", ...}，空 ops 报错不再假成功；系统提示词引导自定义 id + 一次性完成创建与连线，减少分步往返。
 + [新增] 工具循环达上限（8 轮）且任务未完成时插入提示「已连续执行 N 次工具调用，先暂停。发送「继续」可继续」，新增 notice 消息样式。
 
