@@ -8,7 +8,7 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { AGENT_PANEL_FLOAT_WIDTH, savePanelLayout, useAgentStore, type AgentPanelLayout } from "@/stores/use-agent-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 
-const DOCK_SNAP_DISTANCE = 56;
+const DOCK_SNAP_DISTANCE = 16;
 const FLOAT_HEIGHT = Math.min(typeof window === "undefined" ? 680 : window.innerHeight * 0.72, 680);
 const FLOAT_MIN_WIDTH = 320;
 const FLOAT_MIN_HEIGHT = 320;
