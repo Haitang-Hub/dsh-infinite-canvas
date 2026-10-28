@@ -11,7 +11,7 @@
 
 ```
 infinite-canvas/
-├── web/           前端（Vite + React + antd，端口 5070）
+├── web/           前端（Vite + React + antd，dev 端口固定 5075）
 │   └── src/pages/canvas/      画布列表页 + 画布编辑页（/ 与 /canvas/:id）
 ├── canvas-agent/  本机画布桥 + MCP 服务（端口 17371；`canvas-agent mcp` 启动 MCP stdio）
 ├── start.bat      Windows 一键启动
@@ -33,10 +33,10 @@ pro-components beta 的 peer 依赖声明冲突），随后启动两个服务：
 
 | 服务 | 端口 | 说明 |
 | ---- | ---- | ---- |
-| Web | 5070（被占用时固定回落 5075） | 画布前端（dev server），也是 MCP 工具的浏览器执行器 |
+| Web | 5075（固定） | 画布前端（dev server），也是 MCP 工具的浏览器执行器 |
 | Bridge | 17371 | 画布桥服务：MCP ↔ 浏览器执行器的分发中枢，兼本地文件存储 |
 
-打开 http://localhost:5070 即可使用画布；桥连接零配置（token 经 `GET /bootstrap`
+打开 http://localhost:5075 即可使用画布；桥连接零配置（token 经 `GET /bootstrap`
 自动发现），顶栏圆点显示桥状态（在线/离线/执行中）。
 
 ## 接入 MCP 客户端（DeepSeek harness 等）
@@ -54,7 +54,7 @@ pro-components beta 的 peer 依赖声明冲突），随后启动两个服务：
 （检查桥在线、执行器在线、data 目录可写、协议版本）。
 
 **重要**：MCP 工具在浏览器页面中执行（"遥控浏览器"模式），调用前必须已打开
-http://localhost:5070 并保持页面开启；否则工具返回 `executor_offline` 错误并引导打开页面。
+http://localhost:5075 并保持页面开启；否则工具返回 `executor_offline` 错误并引导打开页面。
 
 工具分三组：项目管理（`canvas_list_projects` / `site_navigate`）、画布操作
 （`canvas_apply_ops` 批量入口 + 各便捷封装 + 读取类工具）、生成（`canvas_run_generation`
@@ -72,7 +72,7 @@ http://localhost:5070 并保持页面开启；否则工具返回 `executor_offli
 
 存储服务由 canvas-agent（17371）内置的 `/store/*`、`/media/*` 端点提供，页面自动发现、
 零配置。服务不在线时自动回退浏览器 IndexedDB，且历史数据会在下次联网时**自动懒迁移**上盘
-（读取时发现磁盘缺失 → 从 IndexedDB 上传）。换端口（5070↔5075）、换浏览器、换机器拷贝
+（读取时发现磁盘缺失 → 从 IndexedDB 上传）。换端口、换浏览器、换机器拷贝
 `data/` 目录即可找回全部工程。
 
 ## 开发

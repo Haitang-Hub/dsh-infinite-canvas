@@ -48,7 +48,7 @@
 ## 可靠性约定
 
 - **执行器离线检测**：工具下发后 3s 内无在线执行器 → 结构化错误
-  `{ error: "executor_offline", hint: "请先打开画布页面 http://localhost:5070..." }`。
+  `{ error: "executor_offline", hint: "请先打开画布页面 http://localhost:5075..." }`。
   MCP 层以 `isError` 结果透出该结构。
 - **执行超时**：状态读取类 10s，其余默认 30s；超时返回 `tool_timeout`。
 - **FIFO 串行**：同一执行器的多个 tool_call 按到达顺序排队执行，避免画布状态竞态。

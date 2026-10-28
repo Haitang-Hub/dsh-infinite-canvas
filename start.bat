@@ -43,8 +43,8 @@ echo [OK] Bridge started
 
 :: 2. Web dev server (blocking, current window)
 echo.
-echo Web: http://localhost:5070
-echo       falls back to http://localhost:5075 if port 5070 is busy
+echo Web: http://localhost:5075
+echo       (fixed port)
 echo Press Ctrl+C to stop
 echo.
 

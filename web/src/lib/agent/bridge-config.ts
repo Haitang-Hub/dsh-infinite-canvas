@@ -21,7 +21,7 @@ export function readStoredBridgeConfig(): BridgeConfig {
 
 /**
  * 默认桥地址：插件托管形态下页面由桥本身伺服（同源），直接用当前 origin；
- * 独立开发态（vite 5070/5075）回退到固定回环端口。
+ * 独立开发态（vite 固定 5075）回退到固定回环端口。
  */
 function defaultBridgeUrl(): string {
     try {
@@ -29,7 +29,7 @@ function defaultBridgeUrl(): string {
         if (protocol === "http:" || protocol === "https:") {
             if (hostname === "127.0.0.1" || hostname === "localhost" || hostname === "[::1]") {
                 const port = window.location.port;
-                if (port && !["5070", "5075"].includes(port)) return window.location.origin;
+                if (port && port !== "5075") return window.location.origin;
             }
         }
     } catch {

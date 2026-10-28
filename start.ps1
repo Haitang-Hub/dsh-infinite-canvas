@@ -29,9 +29,9 @@ Write-Host "Starting services..." -ForegroundColor Cyan
 Start-Process cmd -ArgumentList '/k', 'title Bridge 17371 && npm run dev' -WorkingDirectory $agentDir
 Write-Host "  Bridge started" -ForegroundColor Green
 
-# 2. Web dev server (port 5070, falls back to 5075 if busy) - runs in current window
+# 2. Web dev server (fixed port 5075) - runs in current window
 Write-Host ""
-Write-Host "Web: http://localhost:5070 (falls back to 5075 if port 5070 is busy)" -ForegroundColor Yellow
+Write-Host "Web: http://localhost:5075 (fixed port)" -ForegroundColor Yellow
 Write-Host "Press Ctrl+C to stop all" -ForegroundColor Gray
 Write-Host ""
 
