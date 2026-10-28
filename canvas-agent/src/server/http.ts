@@ -366,6 +366,9 @@ function setCors(req: Request, res: Response, url: URL, config: CanvasAgentConfi
     // 若不放行，插件托管形态（全新数据目录、origins 白名单为空）下站点连自己的 JS/CSS 都会 403。
     const host = req.headers.host;
     if (host && origin === `${req.protocol}://${host}`) return true;
+    // 本机开发页面（vite 5070/5075 等回环 origin）允许经 /bootstrap 零配置拿 token；
+    // 非回环 origin（公网网站 drive-by 探测回环端口）仍然拒绝。
+    if (url.pathname === "/bootstrap" && isLoopbackOrigin(origin)) return true;
     config.origins ||= [];
     if (validToken(req, url, config.token) && !config.origins.includes(origin)) {
         config.origins.push(origin);
@@ -379,6 +382,16 @@ function setCors(req: Request, res: Response, url: URL, config: CanvasAgentConfi
 function validToken(req: Request, url: URL, token: string) {
     const header = req.headers["x-canvas-agent-token"];
     return url.searchParams.get("token") === token || header === token || (Array.isArray(header) && header.includes(token));
+}
+
+/** origin 是否为本机回环地址（127.0.0.1 / localhost / ::1）。 */
+function isLoopbackOrigin(origin: string) {
+    try {
+        const hostname = new URL(origin).hostname;
+        return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+    } catch {
+        return false;
+    }
 }
 
 /** 向 Agent 提示词追加本轮图片附件引用说明。 */
