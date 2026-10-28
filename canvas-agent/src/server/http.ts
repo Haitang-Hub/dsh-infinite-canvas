@@ -63,8 +63,12 @@ export function startHttpServer() {
     if (siteDir) {
         app.use(express.static(siteDir, { index: "index.html" }));
         // Express 5 的 path-to-regexp 不接受裸 "*"，用方法判断中间件实现 SPA 回退。
+        // 只回退浏览器导航（Accept 含 text/html）；GET /events 等 API/SSE 路由
+        // （EventSource 发 Accept: text/event-stream，fetch JSON 发 application/json）
+        // 必须放行到下方路由，否则会被 index.html 遮蔽导致连接失败。
         app.use((req, res, next) => {
             if (req.method !== "GET" && req.method !== "HEAD") return next();
+            if (!String(req.headers.accept || "").includes("text/html")) return next();
             res.sendFile(path.join(siteDir, "index.html"), (error) => {
                 if (error && !res.headersSent) res.status(404).json({ ok: false, error: "site index.html missing" });
             });
