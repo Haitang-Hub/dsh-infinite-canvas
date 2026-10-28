@@ -1,12 +1,15 @@
 /**
  * dsh-infinite-canvas 客户端入口（可直接加载的单文件模块，无 JSX、无构建依赖）。
  *
- * 形态：DSH **右侧栏面板**（与 dsh-3d-director-desk 0.2.3 同构）。
- *   - 会话保持整页宽度（宿主自己的布局不动）；
- *   - 无限画布停靠在右侧栏的一个标签页里，可拖动、可拆分、可全屏；
- *   - 用户从右侧栏「开始」引导页点「无限画布」即可打开，之后作为普通标签保留。
+ * 形态：DSH **工作台 + 右侧栏面板**双入口。
+ *   - 工作台页：desktopWorkbenches.register 以规范 GitHub repository 注册 provider
+ *     （Desktop 解析为 haitang-hub/dsh-infinite-canvas，首次自动加入工作台页），
+ *     标准分栏：原生会话在左，画布业务区在右（占 70%）；
+ *   - 右侧栏：无限画布停靠在一个标签页里，可拖动、可拆分、可全屏，
+ *     「开始」引导页也有入口。
  *
- * 扩展面（与宿主自带 panel 一致）：
+ * 扩展面：
+ *   ctx.desktopWorkbenches.register(definition, component)  ← 工作台 provider
  *   ctx.sidebarRightTabs.register(definition)   ← 声明标签类型与引导页入口
  *   ctx.slots.register({ name: 'sidebar.right.pane.tab', key: definition.id })  ← 标签正文
  *
@@ -183,8 +186,17 @@ window.__ModuleLoader__.load({
         name: 'sidebar.right.pane.tab',
         key: TAB_ID,
       }, InfiniteCanvasTab))
+
+      // 3) 工作台 provider：Desktop 用 repository 解析 owner/repo 身份并交叉核对安装记录，
+      //    reconcileLocalProviders 首次会自动把本工作台加入「工作台」页（added + pinned）。
+      ctx.effect(() => ctx.desktopWorkbenches.register({
+        title: '无限画布',
+        repository: 'https://github.com/Haitang-Hub/dsh-infinite-canvas',
+        description: '节点编排、图像生成与导出，和对话并排使用',
+        layout: { businessSide: 'right', businessWidth: 0.7 },
+      }, InfiniteCanvasTab), 'infinite-canvas: workbench provider')
     }
 
-    return { apply, inject: ['sidebarRightTabs', 'slots'] }
+    return { apply, inject: ['sidebarRightTabs', 'slots', 'desktopWorkbenches'] }
   },
 })
