@@ -43,7 +43,7 @@ import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/a
 import { CanvasSidePanel } from "@/components/canvas/canvas-side-panel";
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
-import { directorDeskBaseUrl, directorDeskReachable } from "@/lib/agent/director-plugin";
+import { directorDeskBaseUrl, directorDeskReachable, requestShellOpenDirectorDesk } from "@/lib/agent/director-plugin";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { usePluginHost } from "@/pages/canvas/hooks/use-plugin-host";
@@ -3139,6 +3139,13 @@ function InfiniteCanvasPage() {
 
     const handleOpenDirectorDesk = useCallback(
         async (deskId: string, _nodeId: string) => {
+            // Harness 插件形态（页面被宿主 iframe 嵌入）：请求宿主壳打开右侧栏「导演台」标签，
+            // 导演台桥由其插件托管（自动拉起 + 心跳），端口对页面不可见也无需探测。
+            // 壳未升级（600ms 无 ACK / 导演台插件缺失）或独立运行时，回退原流程：探测 5080 后开独立窗口。
+            if (window.parent !== window) {
+                const opened = await requestShellOpenDirectorDesk(deskId);
+                if (opened) return;
+            }
             // 打开外部导演台插件（3d-director-desk）中对应的实例；插件地址可经 config.js 的 directorDeskUrl 覆盖。
             const baseUrl = directorDeskBaseUrl();
             const url = `${baseUrl}/director/editor?instanceId=${encodeURIComponent(deskId)}`;

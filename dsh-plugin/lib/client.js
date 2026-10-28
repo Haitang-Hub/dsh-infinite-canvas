@@ -195,8 +195,28 @@ window.__ModuleLoader__.load({
         description: '节点编排、图像生成与导出，和对话并排使用',
         layout: { businessSide: 'right', businessWidth: 0.7 },
       }, InfiniteCanvasTab), 'infinite-canvas: workbench provider')
+
+      // 4) 画布页 → 宿主：悬停 3D 导演台节点时请求打开右侧栏「导演台」标签
+      //    （导演台插件注册的 kind 'director-desk'；params.instanceId 交给其标签正文，
+      //    由它加载 /director/editor?instanceId=...）。导演台插件缺失时回 ACK 让页面回退独立窗口。
+      ctx.effect(() => {
+        const onMessage = (event) => {
+          const data = event.data
+          if (!data || data.source !== 'infinite-canvas-page' || data.type !== 'open-director-desk') return
+          const instanceId = typeof data.instanceId === 'string' ? data.instanceId : ''
+          if (!instanceId) return
+          try {
+            ctx.sidebarRight.openTab('director-desk', { params: { instanceId } })
+            event.source?.postMessage({ source: 'infinite-canvas-shell', type: 'open-director-desk:ok', instanceId }, '*')
+          } catch {
+            event.source?.postMessage({ source: 'infinite-canvas-shell', type: 'open-director-desk:missing', instanceId }, '*')
+          }
+        }
+        window.addEventListener('message', onMessage)
+        return () => window.removeEventListener('message', onMessage)
+      }, 'infinite-canvas: shell open director tab')
     }
 
-    return { apply, inject: ['sidebarRightTabs', 'slots', 'desktopWorkbenches'] }
+    return { apply, inject: ['sidebarRightTabs', 'slots', 'desktopWorkbenches', 'sidebarRight'] }
   },
 })
