@@ -3,6 +3,10 @@
 只记录 `dsh-infinite-canvas` 插件包的版本演进。SPA 产品层面的完整变更史见
 [docs/CHANGELOG.md](docs/CHANGELOG.md)（产品版本线，封存快照 tag `v0.21.0-full`，维护于 `full` 分支）。
 
+## 0.2.2（2026-10-28）
+
++ [修复] 面板 iframe 黑屏：桥的 CORS 中间件把带 Origin 的同源请求按 origins 白名单拒绝，而插件托管形态是全新数据目录、白名单为空——HTML 能拿到但 JS/CSS 全部 403，画布永不挂载（浏览器对 `<script type="module" crossorigin>`/CSS 自动带 Origin 头；curl 不带所以此前 curl 验收全绿）。setCors 现对同源请求直接放行，独立运行形态不受影响。经 headless 浏览器复现 → 修复 → 复测：资源 200、root 正常挂载并自动进入画布工程页。
+
 ## 0.2.1（2026-10-28）
 
 + 客户端补 `desktopWorkbenches.register()` 工作台 provider（repository 指向本仓库 GitHub）：插件此前只有 sidebarRightTabs 契约，安装后不会出现在 Desktop「工作台」页；现以标准分栏注册（原生会话在左、画布业务区在右，businessWidth 0.7），首次加载由 reconcileLocalProviders 自动加入工作台页。右侧栏标签入口保留。

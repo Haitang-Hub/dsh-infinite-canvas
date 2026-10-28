@@ -69857,6 +69857,8 @@ function setCors(req, res, url, config2) {
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Private-Network", "true");
   if (!origin || req.method === "OPTIONS" || url.pathname === "/health" || url.pathname === "/config") return true;
+  const host = req.headers.host;
+  if (host && origin === `${req.protocol}://${host}`) return true;
   config2.origins ||= [];
   if (validToken(req, url, config2.token) && !config2.origins.includes(origin)) {
     config2.origins.push(origin);
