@@ -119,7 +119,7 @@ function conversationBootstrapView(conversation: AgentConversationState) {
             : conversation.status === "failed"
                 ? { key: "codex:prepare_failed", text: rt("conversationInitFailed"), detail: conversation.error || rt("conversationCreateFailed"), status: "error" }
                 : conversation.status === "ready"
-                    ? { key: "mcp:ready", text: rt("mcpServicesReady", { count: services.length }), detail: rt("toolsReady"), status: "ready" }
+                    ? { key: "mcp:ready", text: services.length ? rt("mcpServicesReady", { count: services.length }) : rt("toolsReadyNoMcp"), detail: rt("toolsReady"), status: "ready" }
                     : null;
     return { bootstrapStatus, mcpStartupStatuses };
 }
