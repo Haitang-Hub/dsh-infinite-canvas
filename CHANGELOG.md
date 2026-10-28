@@ -3,6 +3,10 @@
 只记录 `dsh-infinite-canvas` 插件包的版本演进。SPA 产品层面的完整变更史见
 [docs/CHANGELOG.md](docs/CHANGELOG.md)（产品版本线，封存快照 tag `v0.21.0-full`，维护于 `full` 分支）。
 
+## 0.2.5（2026-10-29）
+
++ [新增] Harness 内从画布打开 3D 导演台改为右侧栏标签：页面嵌入态经 postMessage 请求宿主壳，壳转发 `sidebarRight.openTab('director-desk', { params: { instanceId } })`（配合 dsh-3d-director-desk 0.2.10 的标签参数，加载 /director/editor?instanceId=...）；壳未升级或导演台插件缺失时 600ms 内 ACK 超时回退原独立窗口流程，独立运行形态行为不变。
+
 ## 0.2.4（2026-10-28）
 
 + [修复] Agent 面板「连接失败」：插件化加入的 SPA 回退中间件把所有 GET（含 GET /events、/agent/*）吞成 index.html，EventSource 拿到 HTML 而非 event-stream，面板永远连不上——独立运行（无站点伺服）无此问题，插件形态自 0.2.0 起即坏。现回退仅对浏览器导航（Accept 含 text/html）生效，API/SSE 路由正常到达 token 中间件与路由。经 curl 断言四项验证：/events+正确 token=200 event-stream、垃圾 token=401、/canvas/x 导航=200、/bootstrap 回归=200。
