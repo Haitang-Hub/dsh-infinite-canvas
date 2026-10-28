@@ -69579,6 +69579,7 @@ function startHttpServer() {
     app.use(import_express.default.static(siteDir, { index: "index.html" }));
     app.use((req, res, next) => {
       if (req.method !== "GET" && req.method !== "HEAD") return next();
+      if (!String(req.headers.accept || "").includes("text/html")) return next();
       res.sendFile(path6.join(siteDir, "index.html"), (error2) => {
         if (error2 && !res.headersSent) res.status(404).json({ ok: false, error: "site index.html missing" });
       });
