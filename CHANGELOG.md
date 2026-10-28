@@ -3,6 +3,10 @@
 只记录 `dsh-infinite-canvas` 插件包的版本演进。SPA 产品层面的完整变更史见
 [docs/CHANGELOG.md](docs/CHANGELOG.md)（产品版本线，封存快照 tag `v0.21.0-full`，维护于 `full` 分支）。
 
+## 0.2.1（2026-10-28）
+
++ 客户端补 `desktopWorkbenches.register()` 工作台 provider（repository 指向本仓库 GitHub）：插件此前只有 sidebarRightTabs 契约，安装后不会出现在 Desktop「工作台」页；现以标准分栏注册（原生会话在左、画布业务区在右，businessWidth 0.7），首次加载由 reconcileLocalProviders 自动加入工作台页。右侧栏标签入口保留。
+
 ## 0.2.0（2026-10-28）
 
 + 插件提根：`main` 分支即插件包本体（`dsh/`、`lib/`、`bridge/`、`site/` 在仓库根），全量源码（`web/`、`canvas-agent/`）在 `full` 分支维护；`bridge/`、`site/` 构建产物随 release 入库，`main` 上 `npm pack` 可直接出包。

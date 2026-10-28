@@ -51,7 +51,8 @@ executor = 面板 iframe 里的画布页面（经 /bootstrap 零配置拿到本�
 | --- | --- |
 | `GET /api/infinite-canvas.bridge-info` | `{ ready, host, port, supervised, restarts, error? }`，面板据此显示 iframe 还是恢复引导 |
 | `POST /api/infinite-canvas.restart-bridge` | 杀掉插件托管的桥并重建，不用重启 DSH Desktop |
-| `sidebarRightTabs.register({ kind: 'infinite-canvas' })` | 右侧栏标签类型 + 「开始」引导页入口 |
+| `sidebarRightTabs.register({ kind: "infinite-canvas" })` | 右侧栏标签类型 + 「开始」引导页入口 |
+| `desktopWorkbenches.register(definition, component)` | 工作台页 provider（标准分栏，repository 解析身份），与右侧栏标签并存 |
 
 ## 桥进程（canvas-agent 单文件）
 
