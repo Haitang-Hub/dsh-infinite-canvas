@@ -3,6 +3,10 @@
 只记录 `dsh-infinite-canvas` 插件包的版本演进。SPA 产品层面的完整变更史见
 [docs/CHANGELOG.md](docs/CHANGELOG.md)（产品版本线，封存快照 tag `v0.21.0-full`，维护于 `full` 分支）。
 
+## 0.2.3（2026-10-28）
+
++ [修复] 独立开发态（vite 5070/5075）AI 助手面板拿不到 token：/bootstrap 对跨源请求一律 403。setCors 现对回环 origin（localhost/127.0.0.1/::1）放行 /bootstrap——本机开发页面零配置发现桥，公网网站 drive-by 探测回环端口仍被拒。
+
 ## 0.2.2（2026-10-28）
 
 + [修复] 面板 iframe 黑屏：桥的 CORS 中间件把带 Origin 的同源请求按 origins 白名单拒绝，而插件托管形态是全新数据目录、白名单为空——HTML 能拿到但 JS/CSS 全部 403，画布永不挂载（浏览器对 `<script type="module" crossorigin>`/CSS 自动带 Origin 头；curl 不带所以此前 curl 验收全绿）。setCors 现对同源请求直接放行，独立运行形态不受影响。经 headless 浏览器复现 → 修复 → 复测：资源 200、root 正常挂载并自动进入画布工程页。

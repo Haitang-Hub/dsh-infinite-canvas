@@ -69859,6 +69859,7 @@ function setCors(req, res, url, config2) {
   if (!origin || req.method === "OPTIONS" || url.pathname === "/health" || url.pathname === "/config") return true;
   const host = req.headers.host;
   if (host && origin === `${req.protocol}://${host}`) return true;
+  if (url.pathname === "/bootstrap" && isLoopbackOrigin(origin)) return true;
   config2.origins ||= [];
   if (validToken(req, url, config2.token) && !config2.origins.includes(origin)) {
     config2.origins.push(origin);
@@ -69870,6 +69871,14 @@ function setCors(req, res, url, config2) {
 function validToken(req, url, token) {
   const header = req.headers["x-canvas-agent-token"];
   return url.searchParams.get("token") === token || header === token || Array.isArray(header) && header.includes(token);
+}
+function isLoopbackOrigin(origin) {
+  try {
+    const hostname2 = new URL(origin).hostname;
+    return hostname2 === "127.0.0.1" || hostname2 === "localhost" || hostname2 === "::1";
+  } catch {
+    return false;
+  }
 }
 function withAttachmentContext(prompt, attachments) {
   if (!attachments.length) return prompt;

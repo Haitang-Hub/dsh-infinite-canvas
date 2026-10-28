@@ -1,6 +1,6 @@
 {
   "name": "dsh-infinite-canvas",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "无限画布右侧栏插件：画布与对话并排，Agent 经 canvas_* 工具实时操作画布节点、生成与导出。",
   "type": "module",
   "main": "./dsh/index.js",
