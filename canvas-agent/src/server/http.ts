@@ -362,6 +362,10 @@ function setCors(req: Request, res: Response, url: URL, config: CanvasAgentConfi
     res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
     res.setHeader("Access-Control-Allow-Private-Network", "true");
     if (!origin || req.method === "OPTIONS" || url.pathname === "/health" || url.pathname === "/config") return true;
+    // 同源请求直接放行：站点自身的 <script type="module" crossorigin>/<link> 会带 Origin 头，
+    // 若不放行，插件托管形态（全新数据目录、origins 白名单为空）下站点连自己的 JS/CSS 都会 403。
+    const host = req.headers.host;
+    if (host && origin === `${req.protocol}://${host}`) return true;
     config.origins ||= [];
     if (validToken(req, url, config.token) && !config.origins.includes(origin)) {
         config.origins.push(origin);
