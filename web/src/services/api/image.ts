@@ -815,8 +815,10 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
                 ...(requestSize ? { size: requestSize } : {}),
                 ...(background ? { background } : {}),
                 // gpt-image models reject response_format; they always return b64.
-                ...(/gpt-image/.test(requestConfig.model) ? {} : { response_format: "b64_json" }),
-                output_format: IMAGE_OUTPUT_FORMAT,
+                // output_format 同样是 gpt-image 专属参数，队列型中转（文生图队列）会拒收未知字段。
+                ...(/gpt-image/.test(requestConfig.model)
+                    ? { output_format: IMAGE_OUTPUT_FORMAT }
+                    : { response_format: "b64_json" }),
             },
             {
                 headers: aiHeaders(requestConfig, "application/json"),
@@ -870,11 +872,12 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     formData.set("model", requestConfig.model);
     formData.set("prompt", withSystemPrompt(requestConfig, requestPrompt));
     formData.set("n", String(n));
-    // gpt-image models reject response_format; they always return b64.
-    if (!/gpt-image/.test(requestConfig.model)) {
+    // output_format 是 gpt-image 专属参数；其余模型用 response_format，队列型中转会拒收未知字段。
+    if (/gpt-image/.test(requestConfig.model)) {
+        formData.set("output_format", IMAGE_OUTPUT_FORMAT);
+    } else {
         formData.set("response_format", "b64_json");
     }
-    formData.set("output_format", IMAGE_OUTPUT_FORMAT);
     if (quality) {
         formData.set("quality", quality);
     }
