@@ -1,4 +1,4 @@
-# dsh-infinite-canvas（DSH 工作台插件包）
+# dsh-infinite-canvas（DSH Desktop 插件包）
 
 把无限画布接入 DeepSeek Harness（DSH Desktop）的插件包，形态与
 `dsh-3d-director-desk` 同构。一个包同时是：
