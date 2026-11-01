@@ -1,0 +1,128 @@
+name: Release
+
+# Version-driven release: bump `version` in dsh-plugin/package.json and push
+# to `full`. If tag v<version> already exists, this run exits early (plain
+# pushes only get the CI workflow).
+on:
+  push:
+    branches: [full]
+
+permissions:
+  contents: write
+
+# Configure the NPM_TOKEN repo secret to enable npm publishing; without it
+# the publish step is skipped and releases still land on main + GitHub Release.
+env:
+  NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: build / sync main / tag / release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Read plugin version
+        id: version
+        run: echo "version=$(node -p "require('./dsh-plugin/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Check release needed
+        id: gate
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "Tag v${{ steps.version.outputs.version }} already exists, skipping release"
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install web dependencies
+        if: steps.gate.outputs.needed == 'true'
+        working-directory: web
+        run: npm install --legacy-peer-deps
+
+      - name: Build web
+        if: steps.gate.outputs.needed == 'true'
+        working-directory: web
+        run: npm run build
+
+      - name: Sync plugin assets
+        if: steps.gate.outputs.needed == 'true'
+        working-directory: dsh-plugin
+        run: npm run sync
+
+      - name: Pack plugin
+        if: steps.gate.outputs.needed == 'true'
+        working-directory: dsh-plugin
+        run: npm pack
+
+      - name: Publish artifacts to main
+        if: steps.gate.outputs.needed == 'true'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Fresh checkout of main in a scratch dir: no stale bridge/site to
+          # un-nest, unlike the local branch-switch flow.
+          git worktree add --detach "$RUNNER_TEMP/main" origin/main
+          cd "$RUNNER_TEMP/main"
+
+          # Package payload: same set as dsh-plugin/package.json `files`
+          # (dsh lib bridge site cordis.patch.yml README.md) plus LICENSE.
+          rm -rf dsh lib bridge site cordis.patch.yml package.json
+          cp -r "$GITHUB_WORKSPACE/dsh-plugin/dsh" dsh
+          cp -r "$GITHUB_WORKSPACE/dsh-plugin/lib" lib
+          cp -r "$GITHUB_WORKSPACE/dsh-plugin/bridge" bridge
+          cp -r "$GITHUB_WORKSPACE/dsh-plugin/site" site
+          cp "$GITHUB_WORKSPACE/dsh-plugin/cordis.patch.yml" cordis.patch.yml
+          cp "$GITHUB_WORKSPACE/dsh-plugin/package.json" package.json
+          cp "$GITHUB_WORKSPACE/dsh-plugin/README.md" README.md
+          cp "$GITHUB_WORKSPACE/LICENSE" LICENSE
+
+          # npm pack must be reproducible from this checkout
+          npm pack --dry-run >/dev/null
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No artifact changes on main"
+          else
+            git commit -m "chore: release v$VERSION"
+            git push origin HEAD:main
+          fi
+
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
+
+      - name: Create GitHub Release
+        if: steps.gate.outputs.needed == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          files: dsh-plugin/dsh-infinite-canvas-*.tgz
+          fail_on_unmatched_files: true
+
+      # Skipped unless the NPM_TOKEN secret is configured. npm-based plugin
+      # markets discover packages by the "dsh-plugin" keyword (already set in
+      # dsh-plugin/package.json).
+      - name: Publish to npm
+        if: steps.gate.outputs.needed == 'true' && env.NPM_TOKEN != ''
+        working-directory: dsh-plugin
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}' > ~/.npmrc
+          npm publish

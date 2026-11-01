@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main, full]
+  pull_request:
+    branches: [main, full]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # web 的历史遗留 tsc 错误基线（canvas-node / model-script-editor / constant/canvas）
+  # 规则：数量永不增加；清零后可把此项改为 0 收紧。
+  TSC_ERROR_BASELINE: "9"
+
+jobs:
+  build-plugin:
+    name: 构建插件（full 分支）
+    if: github.ref == 'refs/heads/full' || github.base_ref == 'full'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            canvas-agent/package-lock.json
+
+      - name: canvas-agent 测试 + 单文件桥
+        working-directory: canvas-agent
+        run: |
+          npm ci
+          npm test
+          npm run build:bundle
+
+      - name: web 构建（tsc 基线门禁 + vite build）
+        working-directory: web
+        run: |
+          npm ci --legacy-peer-deps
+          set +e
+          npx tsc --noEmit > tsc-baseline.log 2>&1
+          count=$(grep -c "error TS" tsc-baseline.log || true)
+          echo "tsc 错误数：$count（基线 $TSC_ERROR_BASELINE）"
+          grep "error TS" tsc-baseline.log || true
+          if [ "$count" -gt "$TSC_ERROR_BASELINE" ]; then
+            echo "::error::tsc 错误数超过基线（$count > $TSC_ERROR_BASELINE），禁止新增类型错误"
+            exit 1
+          fi
+          npm run build
+
+      - name: 同步产物并打包插件
+        working-directory: dsh-plugin
+        run: |
+          npm run sync
+          npm pack
+
+      - name: 上传插件 tgz
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-tgz
+          path: dsh-plugin/*.tgz
+          if-no-files-found: error
+
+  verify-main:
+    name: 校验产物分支（main）
+    if: github.ref == 'refs/heads/main' || github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 入库产物完整性
+        run: |
+          test -f bridge/index.js || { echo "::error::main 缺少 bridge/index.js"; exit 1; }
+          test -f bridge/agent-instructions.md || { echo "::error::main 缺少 bridge/agent-instructions.md"; exit 1; }
+          test -f site/index.html || { echo "::error::main 缺少 site/index.html"; exit 1; }
+          test -f dsh/index.js || { echo "::error::main 缺少 dsh/index.js"; exit 1; }
+          test -f lib/client.js || { echo "::error::main 缺少 lib/client.js"; exit 1; }
+          echo "产物文件齐全"
+
+      - name: sync 跳过校验（root 布局应直接退出 0）
+        run: npm run sync
+
+      - name: npm pack 试打包
+        run: npm pack --dry-run
