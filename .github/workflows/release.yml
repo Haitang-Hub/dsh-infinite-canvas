@@ -93,7 +93,8 @@ jobs:
           git checkout -b dsh-release-"$VERSION"
 
           # Package payload: same set as dsh-plugin/package.json `files`
-          # (dsh lib bridge site cordis.patch.yml README.md) plus LICENSE.
+          # (dsh lib bridge site cordis.patch.yml README.md). LICENSE 由 main
+          # 分支自带（full 分支没有 LICENSE 文件，不要从工作区拷）。
           rm -rf dsh lib bridge site cordis.patch.yml package.json
           cp -r "$GITHUB_WORKSPACE/dsh-plugin/dsh" dsh
           cp -r "$GITHUB_WORKSPACE/dsh-plugin/lib" lib
@@ -102,7 +103,6 @@ jobs:
           cp "$GITHUB_WORKSPACE/dsh-plugin/cordis.patch.yml" cordis.patch.yml
           cp "$GITHUB_WORKSPACE/dsh-plugin/package.json" package.json
           cp "$GITHUB_WORKSPACE/dsh-plugin/README.md" README.md
-          cp "$GITHUB_WORKSPACE/dsh-plugin/LICENSE" LICENSE
 
           # npm pack must be reproducible from this checkout
           npm pack --dry-run >/dev/null
