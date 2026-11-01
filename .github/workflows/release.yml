@@ -85,10 +85,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Fresh checkout of main in a scratch dir: no stale bridge/site to
-          # un-nest, unlike the local branch-switch flow.
-          git worktree add --detach "$RUNNER_TEMP/main" origin/main
-          cd "$RUNNER_TEMP/main"
+          # Fresh checkout of main in a scratch dir; create an explicit branch
+          # so we push a named ref (avoids detached-HEAD push ambiguity).
+          MAIN_DIR="$RUNNER_TEMP/main"
+          git worktree add "$MAIN_DIR" origin/main
+          cd "$MAIN_DIR"
+          git checkout -b dsh-release-"$VERSION"
 
           # Package payload: same set as dsh-plugin/package.json `files`
           # (dsh lib bridge site cordis.patch.yml README.md) plus LICENSE.
@@ -100,7 +102,7 @@ jobs:
           cp "$GITHUB_WORKSPACE/dsh-plugin/cordis.patch.yml" cordis.patch.yml
           cp "$GITHUB_WORKSPACE/dsh-plugin/package.json" package.json
           cp "$GITHUB_WORKSPACE/dsh-plugin/README.md" README.md
-          cp "$GITHUB_WORKSPACE/LICENSE" LICENSE
+          cp "$GITHUB_WORKSPACE/dsh-plugin/LICENSE" LICENSE
 
           # npm pack must be reproducible from this checkout
           npm pack --dry-run >/dev/null
@@ -110,7 +112,7 @@ jobs:
             echo "No artifact changes on main"
           else
             git commit -m "chore: release v$VERSION"
-            git push origin HEAD:main
+            git push origin dsh-release-"$VERSION":refs/heads/main --force-with-lease
           fi
 
           git tag "v$VERSION"
