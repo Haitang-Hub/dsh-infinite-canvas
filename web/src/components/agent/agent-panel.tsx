@@ -8,7 +8,7 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { AGENT_PANEL_FLOAT_WIDTH, savePanelLayout, useAgentStore, type AgentPanelLayout } from "@/stores/use-agent-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 
-const DOCK_SNAP_DISTANCE = 16;
+const DOCK_SNAP_DISTANCE = 10;
 const FLOAT_HEIGHT = Math.min(typeof window === "undefined" ? 680 : window.innerHeight * 0.72, 680);
 const FLOAT_MIN_WIDTH = 320;
 const FLOAT_MIN_HEIGHT = 320;
@@ -26,7 +26,8 @@ export function AgentPanel() {
     const setAgentState = useAgentStore((state) => state.setAgentState);
     const [dragging, setDragging] = useState(false);
     const [resizing, setResizing] = useState(false);
-    const dragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null);
+    const [dockHint, setDockHint] = useState<"left" | "right" | null>(null);
+    const dragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number; dockFrom: "left" | "right" | null } | null>(null);
     const layout = savedLayout ?? { mode: "right" as const, x: 0, y: 0 };
     const docked = layout.mode !== "float";
     const floatWidth = layout.width ?? AGENT_PANEL_FLOAT_WIDTH;
@@ -50,13 +51,20 @@ export function AgentPanel() {
         savePanelLayout(next);
     }
 
+    // 本次手势中脱出的那一侧不参与吸附（否则拖出即被吸回），拖到对侧仍可停靠
+    const dockCandidate = (drag: NonNullable<typeof dragRef.current>, left: number): "left" | "right" | null => {
+        if (left < DOCK_SNAP_DISTANCE && drag.dockFrom !== "left") return "left";
+        if (left + floatWidth > window.innerWidth - DOCK_SNAP_DISTANCE && drag.dockFrom !== "right") return "right";
+        return null;
+    };
+
     const onHeaderPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
         if (event.button !== 0) return;
         const target = event.target as HTMLElement;
         if (target.closest("button")) return; // 标题栏上的按钮不触发拖动
         const rect = event.currentTarget.closest("[data-agent-panel-root]")?.getBoundingClientRect();
         if (!rect) return;
-        dragRef.current = { pointerId: event.pointerId, offsetX: event.clientX - rect.x, offsetY: event.clientY - rect.y };
+        dragRef.current = { pointerId: event.pointerId, offsetX: event.clientX - rect.x, offsetY: event.clientY - rect.y, dockFrom: layout.mode === "float" ? null : layout.mode };
         try {
             event.currentTarget.setPointerCapture(event.pointerId);
         } catch {
@@ -73,6 +81,7 @@ export function AgentPanel() {
         const x = Math.min(Math.max(event.clientX - drag.offsetX, -floatWidth + 80), window.innerWidth - 80);
         const y = Math.min(Math.max(event.clientY - drag.offsetY, 0), window.innerHeight - 48);
         updateLayout({ mode: "float", x, y });
+        setDockHint(dockCandidate(drag, event.clientX - drag.offsetX));
     };
 
     const onHeaderPointerUp = (event: ReactPointerEvent<HTMLElement>) => {
@@ -81,11 +90,13 @@ export function AgentPanel() {
         // 直接由指针坐标计算最终位置：不读 DOM rect（React 异步刷帧时 rect 可能还是拖动前的）
         const left = event.clientX - drag.offsetX;
         const top = event.clientY - drag.offsetY;
+        const candidate = dockCandidate(drag, left);
         dragRef.current = null;
         setDragging(false);
+        setDockHint(null);
         // 磁性吸附：接近左右边缘时停靠
-        if (left < DOCK_SNAP_DISTANCE) updateLayout({ mode: "left", x: 0, y: 0 });
-        else if (left + floatWidth > window.innerWidth - DOCK_SNAP_DISTANCE) updateLayout({ mode: "right", x: 0, y: 0 });
+        if (candidate === "left") updateLayout({ mode: "left", x: 0, y: 0 });
+        else if (candidate === "right") updateLayout({ mode: "right", x: 0, y: 0 });
         else updateLayout({ mode: "float", x: Math.min(Math.max(left, 8), window.innerWidth - floatWidth - 8), y: Math.min(Math.max(top, 8), window.innerHeight - 56) });
     };
 
@@ -144,13 +155,22 @@ export function AgentPanel() {
     const translucent = glassOpacity < 100;
     const positionStyle: CSSProperties =
         layout.mode === "float"
-            ? { left: layout.x, top: layout.y, width: floatWidth, height: floatHeight }
+            ? { left: layout.x, top: layout.y, width: floatWidth, maxWidth: "calc(100vw - 16px)", height: floatHeight }
             : layout.mode === "left"
-                ? { left: 0, top: 0, bottom: 0, width }
-                : { right: 0, top: 0, bottom: 0, width };
+                ? { left: 0, top: 0, bottom: 0, width, maxWidth: "100vw" }
+                : { right: 0, top: 0, bottom: 0, width, maxWidth: "100vw" };
 
     return (
         <AgentPanelShellContext.Provider value={shell}>
+            {dragging && dockHint ? (
+                <div
+                    className="pointer-events-none fixed inset-y-0 z-[65]"
+                    style={dockHint === "left" ? { left: 0, width, maxWidth: "100vw" } : { right: 0, width, maxWidth: "100vw" }}
+                    aria-hidden
+                >
+                    <div className="h-full w-full transition-colors duration-100" style={{ background: `color-mix(in srgb, ${theme.node.stroke} 18%, transparent)`, borderInline: `1px dashed ${theme.node.stroke}` }} />
+                </div>
+            ) : null}
             <motion.div
                 data-agent-panel-root
                 data-canvas-shortcuts-ignore

@@ -1,5 +1,7 @@
 # Infinite Canvas（无限画布）
 
+[![CI](https://github.com/Haitang-Hub/dsh-infinite-canvas/actions/workflows/ci.yml/badge.svg)](https://github.com/Haitang-Hub/dsh-infinite-canvas/actions/workflows/ci.yml)
+
 从原 Canvas Director 项目拆分出的独立项目：节点式无限画布 + MCP 工具驱动的 AI 创作
 （文生图/节点编排/画布操作），以及画布工具所需的 3D 导演台工具宿主。
 
@@ -38,6 +40,16 @@ pro-components beta 的 peer 依赖声明冲突），随后启动两个服务：
 
 打开 http://localhost:5075 即可使用画布；桥连接零配置（token 经 `GET /bootstrap`
 自动发现），顶栏圆点显示桥状态（在线/离线/执行中）。
+
+## CI/CD
+
+GitHub Actions 双工作流（`.github/workflows/`）：
+
+- **CI**（push/PR 到 `full`）：canvas-agent 测试 + 单文件桥、web tsc 基线门禁
+  （错误数不得超过 9，只许减少）+ 构建、`dsh-plugin` sync + `npm pack`，tgz 存为构建产物；
+  push/PR 到 `main` 时校验入库产物完整性（bridge/site/dsh/lib）与试打包。
+- **Release**（推送 `v*` tag，须打在 `full` 分支）：走完整构建链打出插件 tgz，
+  自动同步 `bridge/`、`site/` 等产物回 `main` 分支，并创建 GitHub Release 附带 tgz。
 
 ## 接入 MCP 客户端（DeepSeek harness 等）
 

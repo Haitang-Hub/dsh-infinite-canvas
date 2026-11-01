@@ -2,6 +2,10 @@
 
 ## Unreleased
 
++ [变更] 开发态桥端口 17371→17381（config.ts DEFAULT_PORT、start.ps1、web bridge-config 默认值同步），与 Desktop 插件桥的 17371 永久错开；开发态直启不再抢占插件桥端口，跨项目启动脚本（canvas 的 start.ps1 起导演台开发桥）同步改用 STORE_PORT=17383。
++ [修复] 插件 0.2.6：「重启服务」在心跳探测进行中静默失效——starting 窗口内的强制重建请求改记入 restartPending，本次探测结束后补一次重建；probeBridge 改以 /health 自报的 plugin/site 为判据（旧版桥回退 `GET /` 含 id="root" 判据），并区分「开发态画布桥占用」与无关进程的报错文案；MCP 重连上限 120 次（约 10 分钟）放宽到近似无限（5s 退避 ×86400），避免长会话中工具静默失效；面板 iframe/新窗口地址改用 bridge-info 下发的 host，不再写死 127.0.0.1；面板轮询与心跳统一 8s。
++ [新增] canvas-agent /health 增加 plugin/site/version/dataDir 字段（站点能力探测单点判据）；新增 `npm run selftest`（spawn 桥断言 health/bootstrap/静态站点/401 鉴权回路）；sync-assets 支持显式 `--layout full|root`，缺 web/dist 时硬失败（可用 --skip-site 显式跳过），杜绝打出没有站点的 tgz。
++ [文档] bridge-protocol.md 对齐 http.ts 现状（/bootstrap 实际字段、移除不存在的 /store/*、/media/*）；dsh-plugin 新增 SHELL-SYNC.md（与导演台插件的壳同步清单）与 check-shell-parity.mjs 壳漂移校验脚本。
 + [新增] DSH Harness 插件化（dsh-plugin/，形态对齐 dsh-3d-director-desk 0.2.3）：`npm run pack:all` 产出 `dsh plugin add` 可装的 tgz，右侧栏标签内嵌画布 iframe，MCP 经 streamable-http `/mcp` 门面注册 `mcp__infinite-canvas__*` 7 工具；插件托管桥进程（8s 心跳自动重建 + 面板手动重启）。为此 canvas-agent 新增：esbuild 单文件桥 `npm run build:bundle`（dist-bundle/，无需 node_modules）、`GET /bootstrap` 零配置 token 发现、`CANVAS_SITE_DIR` 站点伺服 + SPA 回退、`CANVAS_AGENT_HOME` 数据目录重定向；MCP 注册抽为 stdio/http 共用工厂；web 端 bridge-config 同源自动发现桥端点。
 + [修复] 助手建节点无效但报完成：模型按 MCP 风格输出 ops（{"add_node": {...}}）被前端静默忽略——canvas_apply_ops 执行前自动归一化为 {"type": "add_node", ...}，空 ops 报错不再假成功；系统提示词引导自定义 id + 一次性完成创建与连线，减少分步往返。
 + [新增] 工具循环达上限（8 轮）且任务未完成时插入提示「已连续执行 N 次工具调用，先暂停。发送「继续」可继续」，新增 notice 消息样式。

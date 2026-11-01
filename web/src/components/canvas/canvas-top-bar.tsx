@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Download, FolderOpen, Menu, PanelLeftClose, PanelLeftOpen, Plus, Redo2, Trash2, Undo2, Upload } from "lucide-react";
 import { Button, Dropdown, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
@@ -9,6 +9,7 @@ import { formatProjectNo } from "@/stores/canvas/use-canvas-store";
 import { useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useAgentStore } from "@/stores/use-agent-store";
+import { useAgentPanelInset } from "@/hooks/use-agent-panel-inset";
 
 export function CanvasTopBar({
     title,
@@ -58,6 +59,14 @@ export function CanvasTopBar({
     const [shortcutsOpen, setShortcutsOpen] = useState(false);
     const sidePanelOpen = useCanvasSidePanelStore((state) => state.panelOpen);
     const toggleSidePanel = useCanvasSidePanelStore((state) => state.togglePanel);
+    const panelInset = useAgentPanelInset();
+    const insetWidth = panelInset.side ? Math.min(panelInset.width, window.innerWidth) : 0;
+    // 面板几乎占满视口时顶栏无处安放：整条隐藏（面板自带关闭按钮，不失去出口）
+    const topBarHidden = panelInset.side !== null && window.innerWidth - insetWidth < 320;
+    const insetStyle: CSSProperties = {
+        left: panelInset.side === "left" ? `min(${panelInset.width}px, 100vw)` : 0,
+        right: panelInset.side === "right" ? `min(${panelInset.width}px, 100vw)` : 0,
+    };
 
     useEffect(() => {
         if (!isTitleEditing) return;
@@ -70,7 +79,8 @@ export function CanvasTopBar({
 
     return (
         <>
-            <div className="pointer-events-none absolute left-0 right-0 top-0 z-50 flex h-16 items-center justify-between pl-1 pr-4">
+            {topBarHidden ? null : (
+                <div className="pointer-events-none absolute top-0 z-50 flex h-16 items-center justify-between pl-1 pr-4" style={insetStyle}>
                 <div className="pointer-events-auto flex min-w-0 items-center gap-2">
                     <Tooltip title={sidePanelOpen ? t("canvas.collapsePanel") : t("canvas.expandPanel")}>
                         <button
@@ -123,7 +133,7 @@ export function CanvasTopBar({
                         ) : (
                             <button
                                 type="button"
-                                className="flex max-w-[340px] items-baseline gap-1.5 truncate border-b border-dashed border-transparent text-left text-lg font-semibold tracking-normal transition hover:border-current"
+                                className="flex min-w-0 max-w-[340px] items-baseline gap-1.5 truncate border-b border-dashed border-transparent text-left text-lg font-semibold tracking-normal transition hover:border-current"
                                 onDoubleClick={onStartTitleEditing}
                                 title={t("canvas.renameHint")}
                             >
@@ -138,7 +148,8 @@ export function CanvasTopBar({
                 <div className="pointer-events-auto flex items-center gap-1.5">
                     <UserStatusActions variant="canvas" onOpenShortcuts={() => setShortcutsOpen(true)} onOpenPlugins={onOpenPlugins} />
                 </div>
-            </div>
+                </div>
+            )}
             <Modal title={t("canvas.shortcuts")} open={shortcutsOpen} onCancel={() => setShortcutsOpen(false)} footer={null} centered>
                 <div className="space-y-2 border-t pt-4 text-sm" style={{ borderColor: theme.node.stroke }}>
                     <Shortcut keys={["Ctrl / Space", t("canvas.shortcut.drag")]} value={t("canvas.shortcut.toggleTool")} />
@@ -183,8 +194,8 @@ function CompactBridgeStatus() {
     const dotColor = busy ? "#f59e0b" : connected ? "#22c55e" : theme.node.muted;
     return (
         <button type="button" className="flex h-8 cursor-pointer items-center gap-1.5 text-xs transition hover:opacity-75" style={{ color: busy ? "#d97706" : connected ? "#16a34a" : theme.node.muted }} title={t(enabled ? "agent.status.connectedTooltip" : "agent.status.disconnectedTooltip")} aria-label={label} onClick={openAgentPanel}>
-            <span className={`size-2 rounded-full ${busy ? "animate-pulse" : ""}`} style={{ background: dotColor }} />
-            <span className="max-w-[140px] truncate">{label}</span>
+            <span className={`size-2 shrink-0 rounded-full ${busy ? "animate-pulse" : ""}`} style={{ background: dotColor }} />
+            <span className="hidden max-w-[140px] truncate sm:inline">{label}</span>
         </button>
     );
 }

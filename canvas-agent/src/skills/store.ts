@@ -30,6 +30,14 @@ export type ManagedSkillDetail = {
     managed: true;
 };
 
+export type ManagedSkillSummary = {
+    name: string;
+    description: string;
+    interface?: ManagedSkillInterface;
+    path: string;
+    managed: true;
+};
+
 export type CreateManagedSkillInput = {
     name: string;
     description: string;
@@ -55,20 +63,22 @@ type OpenAiDocument = { raw: string; data: Record<string, unknown>; interface?: 
 
 export class SkillStoreError extends Error {
     override name = "SkillStoreError";
-    constructor(message: string, readonly statusCode: 400 | 404 | 409 | 500) {
+    constructor(message: string, readonly statusCode: 400 | 403 | 404 | 409 | 500) {
         super(message);
     }
 }
 
-/** 只管理站点工作空间下 `.agents/skills` 中的画布专属 Skill。 */
+/** 管理一个可写 Skill 根目录（项目 = 工作区/.agents/skills，个人 = ~/.infinite-canvas/skills）。 */
 export class SkillStore {
-    readonly workspacePath: string;
     readonly skillsPath: string;
+    private readonly parentPath: string;
+    private readonly createParent: boolean;
     private writeQueue: Promise<unknown> = Promise.resolve();
 
-    constructor(workspacePath: string) {
-        this.workspacePath = path.resolve(workspacePath);
-        this.skillsPath = path.join(this.workspacePath, ".agents", "skills");
+    constructor(rootPath: string, parentPath: string = rootPath, options: { createParent?: boolean } = {}) {
+        this.skillsPath = path.resolve(rootPath);
+        this.parentPath = path.resolve(parentPath);
+        this.createParent = Boolean(options.createParent);
     }
 
     /** 判断 Codex 返回的绝对路径是否属于本 Store 的标准 Skill 入口。 */
@@ -88,6 +98,27 @@ export class SkillStore {
         } catch (error) {
             throw storeError(error, "读取 Skill 失败");
         }
+    }
+
+    /** 列出根目录下全部可编辑 Skill（跳过无法解析或命名不合规的目录）。 */
+    async list(): Promise<ManagedSkillSummary[]> {
+        await this.writeQueue.catch(() => undefined);
+        const root = await lstatOptional(this.skillsPath);
+        if (!root || root.isSymbolicLink() || !root.isDirectory()) return [];
+        const entries = await fs.readdir(this.skillsPath, { withFileTypes: true }).catch(() => []);
+        const summaries: ManagedSkillSummary[] = [];
+        for (const entry of entries) {
+            if (!entry.isDirectory() || entry.name.startsWith(".") || !validName(entry.name)) continue;
+            const skillFile = path.join(this.skillsPath, entry.name, "SKILL.md");
+            try {
+                const skill = await readSkill(skillFile, entry.name);
+                const openAi = await readOpenAi(path.join(this.skillsPath, entry.name, "agents", "openai.yaml"), entry.name).catch(() => ({ interface: undefined as ManagedSkillInterface | undefined, raw: "", data: {} as Record<string, unknown> }));
+                summaries.push({ name: entry.name, description: skill.description, ...(openAi.interface ? { interface: openAi.interface } : {}), path: skillFile, managed: true });
+            } catch {
+                // 单个损坏的 Skill 不影响整体列表
+            }
+        }
+        return summaries;
     }
 
     /** 创建新的画布专属 Skill。 */
@@ -171,16 +202,16 @@ export class SkillStore {
     }
 
     private async ensureRoot() {
-        const workspace = await lstatOptional(this.workspacePath);
-        if (!workspace) throw new SkillStoreError("站点工作空间不存在", 409);
-        if (workspace.isSymbolicLink()) throw new SkillStoreError("站点工作空间不能是符号链接或目录联接", 400);
-        if (!workspace.isDirectory()) throw new SkillStoreError("站点工作空间不是目录", 409);
-        const agentsPath = path.join(this.workspacePath, ".agents");
-        await ensurePlainDirectory(agentsPath);
+        if (this.createParent) await ensurePlainDirectory(this.parentPath);
+        else {
+            const parent = await lstatOptional(this.parentPath);
+            if (!parent || !parent.isDirectory()) throw new SkillStoreError("Skill 根目录的父目录不存在", 409);
+            if (parent.isSymbolicLink()) throw new SkillStoreError("Skill 根目录的父目录不能是符号链接或目录联接", 400);
+        }
         await ensurePlainDirectory(this.skillsPath);
-        const realWorkspace = await fs.realpath(this.workspacePath);
+        const realParent = await fs.realpath(this.parentPath);
         const realRoot = await fs.realpath(this.skillsPath);
-        if (!inside(realWorkspace, realRoot)) throw new SkillStoreError("Skill 根目录不安全", 400);
+        if (!inside(realParent, realRoot)) throw new SkillStoreError("Skill 根目录不安全", 400);
     }
 
     private async safeExistingPaths(nameValue: string) {
@@ -207,18 +238,13 @@ export class SkillStore {
     }
 
     private async assertExistingRoot() {
-        const workspace = await lstatOptional(this.workspacePath);
-        if (!workspace) throw new SkillStoreError("找不到指定 Skill", 404);
-        if (workspace.isSymbolicLink()) throw new SkillStoreError("站点工作空间不能是符号链接或目录联接", 400);
-        if (!workspace.isDirectory()) throw new SkillStoreError("找不到指定 Skill", 404);
-        const agentsPath = path.join(this.workspacePath, ".agents");
-        const agents = await lstatOptional(agentsPath);
+        const parent = await lstatOptional(this.parentPath);
         const root = await lstatOptional(this.skillsPath);
-        if (!agents || !root) throw new SkillStoreError("找不到指定 Skill", 404);
-        if (agents.isSymbolicLink() || !agents.isDirectory() || root.isSymbolicLink() || !root.isDirectory()) throw new SkillStoreError("Skill 路径中存在符号链接或目录联接", 400);
-        const realWorkspace = await fs.realpath(this.workspacePath);
+        if (!parent || !root) throw new SkillStoreError("找不到指定 Skill", 404);
+        if (parent.isSymbolicLink() || !parent.isDirectory() || root.isSymbolicLink() || !root.isDirectory()) throw new SkillStoreError("Skill 路径中存在符号链接或目录联接", 400);
+        const realParent = await fs.realpath(this.parentPath);
         const realRoot = await fs.realpath(this.skillsPath);
-        if (!inside(realWorkspace, realRoot)) throw new SkillStoreError("Skill 根目录不安全", 400);
+        if (!inside(realParent, realRoot)) throw new SkillStoreError("Skill 根目录不安全", 400);
     }
 
     private async readDetail(name: string, skillFile: string, openAiFile: string): Promise<ManagedSkillDetail> {
@@ -394,7 +420,9 @@ function revision(skillRaw: string, openAiRaw: string) {
 async function ensurePlainDirectory(directory: string) {
     const entry = await lstatOptional(directory);
     if (!entry) {
-        await fs.mkdir(directory);
+        // 根目录可能是多级（如 workspace/.agents/skills），逐级建出来；
+        // 中间层若被替换成目录联接，随后的 realpath + inside 校验会拦下。
+        await fs.mkdir(directory, { recursive: true });
         return;
     }
     if (entry.isSymbolicLink() || !entry.isDirectory()) throw new SkillStoreError("Skill 路径中存在符号链接或目录联接", 400);

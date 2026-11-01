@@ -9,7 +9,7 @@ import { SkillStore, SkillStoreError } from "./store.js";
 test("创建、读取和更新画布专属 Skill", async (context) => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "canvas-skill-store-"));
     context.after(() => fs.rm(workspace, { recursive: true, force: true }));
-    const store = new SkillStore(workspace);
+    const store = new SkillStore(path.join(workspace, ".agents", "skills"), workspace);
 
     const created = await store.create({
         name: "product-grid",
@@ -43,7 +43,7 @@ test("创建、读取和更新画布专属 Skill", async (context) => {
 test("revision 不匹配时拒绝覆盖或删除", async (context) => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "canvas-skill-store-"));
     context.after(() => fs.rm(workspace, { recursive: true, force: true }));
-    const store = new SkillStore(workspace);
+    const store = new SkillStore(path.join(workspace, ".agents", "skills"), workspace);
     const created = await store.create({ name: "demo", description: "演示 Skill", instructions: "执行演示流程。" });
 
     await assert.rejects(store.update("demo", {
@@ -58,7 +58,7 @@ test("revision 不匹配时拒绝覆盖或删除", async (context) => {
 test("清空界面字段时保留未由画布管理的 openai 元数据", async (context) => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "canvas-skill-store-"));
     context.after(() => fs.rm(workspace, { recursive: true, force: true }));
-    const store = new SkillStore(workspace);
+    const store = new SkillStore(path.join(workspace, ".agents", "skills"), workspace);
     const created = await store.create({
         name: "metadata-demo",
         description: "演示界面元数据",
@@ -85,7 +85,7 @@ test("清空界面字段时保留未由画布管理的 openai 元数据", async 
 test("名称、正文大小和默认提示词均经过校验", async (context) => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "canvas-skill-store-"));
     context.after(() => fs.rm(workspace, { recursive: true, force: true }));
-    const store = new SkillStore(workspace);
+    const store = new SkillStore(path.join(workspace, ".agents", "skills"), workspace);
 
     await assert.rejects(store.create({ name: "Invalid_Name", description: "无效", instructions: "无效" }), (error: unknown) => error instanceof SkillStoreError && error.statusCode === 400);
     await assert.rejects(store.create({ name: "invalid-description", description: "包含 <标签>", instructions: "无效" }), /尖括号/);
@@ -131,7 +131,7 @@ test("名称、正文大小和默认提示词均经过校验", async (context) =
 test("更新校验失败时不会提前改写 SKILL.md", async (context) => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "canvas-skill-store-"));
     context.after(() => fs.rm(workspace, { recursive: true, force: true }));
-    const store = new SkillStore(workspace);
+    const store = new SkillStore(path.join(workspace, ".agents", "skills"), workspace);
     const created = await store.create({ name: "safe-update", description: "保留原内容", instructions: "执行原流程。" });
 
     await assert.rejects(store.update("safe-update", {
@@ -146,7 +146,7 @@ test("更新校验失败时不会提前改写 SKILL.md", async (context) => {
 test("拒绝读取非对象格式的 openai.yaml", async (context) => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "canvas-skill-store-"));
     context.after(() => fs.rm(workspace, { recursive: true, force: true }));
-    const store = new SkillStore(workspace);
+    const store = new SkillStore(path.join(workspace, ".agents", "skills"), workspace);
     const created = await store.create({ name: "invalid-metadata", description: "校验元数据", instructions: "执行流程。" });
     const agentsDir = path.join(path.dirname(created.path), "agents");
     await fs.mkdir(agentsDir);
@@ -158,7 +158,7 @@ test("拒绝读取非对象格式的 openai.yaml", async (context) => {
 test("不完整更新请求返回校验错误而不是运行时异常", async (context) => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "canvas-skill-store-"));
     context.after(() => fs.rm(workspace, { recursive: true, force: true }));
-    const store = new SkillStore(workspace);
+    const store = new SkillStore(path.join(workspace, ".agents", "skills"), workspace);
 
     await assert.rejects(store.update("demo", undefined as never), (error: unknown) => error instanceof SkillStoreError && error.statusCode === 400);
 });
@@ -166,7 +166,7 @@ test("不完整更新请求返回校验错误而不是运行时异常", async (c
 test("空 interface 元数据读取为空", async (context) => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "canvas-skill-store-"));
     context.after(() => fs.rm(workspace, { recursive: true, force: true }));
-    const store = new SkillStore(workspace);
+    const store = new SkillStore(path.join(workspace, ".agents", "skills"), workspace);
     const created = await store.create({ name: "empty-interface", description: "空界面元数据", instructions: "执行流程。" });
     const agentsDir = path.join(path.dirname(created.path), "agents");
     await fs.mkdir(agentsDir);
@@ -178,7 +178,7 @@ test("空 interface 元数据读取为空", async (context) => {
 test("读取或修改不存在的 Skill 不会创建目录", async (context) => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "canvas-skill-store-"));
     context.after(() => fs.rm(workspace, { recursive: true, force: true }));
-    const store = new SkillStore(workspace);
+    const store = new SkillStore(path.join(workspace, ".agents", "skills"), workspace);
     const skillsRoot = path.join(workspace, ".agents", "skills");
 
     await assert.rejects(store.get("missing"), (error: unknown) => error instanceof SkillStoreError && error.statusCode === 404);
@@ -194,7 +194,7 @@ test("读取或修改不存在的 Skill 不会创建目录", async (context) => 
 test("更新后只保留完整文件且不遗留临时文件", async (context) => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "canvas-skill-store-"));
     context.after(() => fs.rm(workspace, { recursive: true, force: true }));
-    const store = new SkillStore(workspace);
+    const store = new SkillStore(path.join(workspace, ".agents", "skills"), workspace);
     const created = await store.create({
         name: "atomic-update",
         description: "验证原子更新",
@@ -221,7 +221,7 @@ test("更新后只保留完整文件且不遗留临时文件", async (context) =
 test("拒绝读取非对象格式的 interface 元数据", async (context) => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "canvas-skill-store-"));
     context.after(() => fs.rm(workspace, { recursive: true, force: true }));
-    const store = new SkillStore(workspace);
+    const store = new SkillStore(path.join(workspace, ".agents", "skills"), workspace);
     const created = await store.create({ name: "invalid-interface", description: "校验界面元数据", instructions: "执行流程。" });
     const agentsDir = path.join(path.dirname(created.path), "agents");
     await fs.mkdir(agentsDir);

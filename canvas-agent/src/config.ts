@@ -3,7 +3,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-export const DEFAULT_PORT = 17371;
+/**
+ * 开发态默认端口（直接 `npm run dev`、未设 PORT 时）。插件托管形态总在 spawn 时
+ * 显式传 PORT=17371（dsh/index.js 的 Config.port），不受此值影响；错开是为了
+ * 开发桥不再抢占 Desktop 插件桥的 17371（2026-10-31 起）。
+ */
+export const DEFAULT_PORT = 17381;
 /**
  * 配置与运行数据的落点：默认 ~/.infinite-canvas；被 Harness 插件托管时经
  * CANVAS_AGENT_HOME 指到 dshHomePath('infinite-canvas')，卸载插件不删数据。

@@ -12,7 +12,7 @@ export class AgentApiError<T = unknown> extends Error {
     }
 }
 
-export type AgentSkillScope = "user" | "repo" | "system" | "admin";
+export type AgentSkillScope = "user" | "repo" | "system";
 export type AgentSkillInterface = { displayName?: string | null; shortDescription?: string | null; defaultPrompt?: string | null };
 export type AgentSkillSummary = {
     name: string;
@@ -33,10 +33,11 @@ export type AgentSkillDetail = {
     path: string;
     managed: true;
     revision: string;
+    scope?: AgentSkillScope;
 };
-export type AgentSkillInput = { name?: string; description: string; instructions: string; interface?: AgentSkillInterface | null; expectedRevision?: string };
+export type AgentSkillInput = { name?: string; description: string; instructions: string; interface?: AgentSkillInterface | null; expectedRevision?: string; scope?: AgentSkillScope };
 export type AgentSkillDraft = { name: string; displayName: string; description: string; instructions: string; shortDescription: string; defaultPrompt: string };
-export type AgentSkillDraftInput = { source: "conversation" | "canvas"; threadId: string; clientId: string; model?: string; effort?: AgentReasoningEffort };
+export type AgentSkillDraftInput = { source: "conversation" | "canvas"; threadId: string; clientId: string; channel: { baseUrl: string; apiKey: string; model: string } };
 export type AgentSkillsResponse = { ok?: boolean; data?: AgentSkillSummary[]; errors?: unknown[] };
 export type AgentSkillResponse = { ok?: boolean; data?: AgentSkillDetail };
 export type AgentSkillDraftResponse = { ok?: boolean; data?: AgentSkillDraft };
@@ -87,32 +88,32 @@ export function resolveAgentMessageAssetUrl(endpoint: string, token: string, val
     return baseUrl && token ? `${baseUrl}/agent/message-assets/${match[1]}/${match[2]}?token=${encodeURIComponent(token)}` : "";
 }
 
-export function fetchCodexSkills(endpoint: string, token: string, forceReload = false) {
-    return fetchAgentJson<AgentSkillsResponse>(endpoint, token, `/agent/codex/skills${forceReload ? "?forceReload=1" : ""}`);
+export function fetchAgentSkills(endpoint: string, token: string, forceReload = false) {
+    return fetchAgentJson<AgentSkillsResponse>(endpoint, token, `/agent/skills${forceReload ? "?forceReload=1" : ""}`);
 }
 
-export function fetchCodexSkill(endpoint: string, token: string, name: string) {
-    return fetchAgentJson<AgentSkillResponse>(endpoint, token, `/agent/codex/skills/${encodeURIComponent(name)}`);
+export function fetchAgentSkill(endpoint: string, token: string, name: string, scope: AgentSkillScope) {
+    return fetchAgentJson<AgentSkillResponse>(endpoint, token, `/agent/skills/${encodeURIComponent(name)}?scope=${encodeURIComponent(scope)}`);
 }
 
-export function createCodexSkill(endpoint: string, token: string, input: AgentSkillInput) {
-    return fetchAgentJson<AgentSkillResponse>(endpoint, token, "/agent/codex/skills", jsonPost(input));
+export function createAgentSkill(endpoint: string, token: string, input: AgentSkillInput) {
+    return fetchAgentJson<AgentSkillResponse>(endpoint, token, "/agent/skills", jsonPost(input));
 }
 
-export function createCodexSkillDraft(endpoint: string, token: string, input: AgentSkillDraftInput) {
-    return fetchAgentJson<AgentSkillDraftResponse>(endpoint, token, "/agent/codex/skills/draft", jsonPost(input));
+export function createAgentSkillDraft(endpoint: string, token: string, input: AgentSkillDraftInput) {
+    return fetchAgentJson<AgentSkillDraftResponse>(endpoint, token, "/agent/skills/draft", jsonPost(input));
 }
 
-export function updateCodexSkill(endpoint: string, token: string, name: string, input: AgentSkillInput) {
-    return fetchAgentJson<AgentSkillResponse>(endpoint, token, `/agent/codex/skills/${encodeURIComponent(name)}`, jsonPost(input));
+export function updateAgentSkill(endpoint: string, token: string, name: string, input: AgentSkillInput) {
+    return fetchAgentJson<AgentSkillResponse>(endpoint, token, `/agent/skills/${encodeURIComponent(name)}`, jsonPost(input));
 }
 
-export function deleteCodexSkill(endpoint: string, token: string, name: string, expectedRevision: string) {
-    return fetchAgentJson<{ ok?: boolean }>(endpoint, token, `/agent/codex/skills/${encodeURIComponent(name)}/delete`, jsonPost({ expectedRevision }));
+export function deleteAgentSkill(endpoint: string, token: string, name: string, expectedRevision: string, scope: AgentSkillScope) {
+    return fetchAgentJson<{ ok?: boolean }>(endpoint, token, `/agent/skills/${encodeURIComponent(name)}/delete`, jsonPost({ expectedRevision, scope }));
 }
 
-export function setCodexSkillEnabled(endpoint: string, token: string, skill: Pick<AgentSkillSummary, "name" | "path">, enabled: boolean) {
-    return fetchAgentJson<{ ok?: boolean }>(endpoint, token, `/agent/codex/skills/${encodeURIComponent(skill.name)}/enabled`, jsonPost({ ...skill, enabled }));
+export function setAgentSkillEnabled(endpoint: string, token: string, skill: Pick<AgentSkillSummary, "name" | "scope">, enabled: boolean) {
+    return fetchAgentJson<{ ok?: boolean }>(endpoint, token, `/agent/skills/${encodeURIComponent(skill.name)}/enabled`, jsonPost({ ...skill, enabled }));
 }
 
 export async function fetchAgentJson<T>(endpoint: string, token: string, path: string, init?: RequestInit) {

@@ -1,10 +1,12 @@
 import { create } from "zustand";
 import i18n from "@/i18n";
 
-import { fetchCodexSkills, type AgentSkillDraft, type AgentSkillSummary } from "@/services/api/canvas-agent";
+import { fetchAgentSkills, type AgentSkillDraft, type AgentSkillSummary } from "@/services/api/canvas-agent";
 import { useAgentStore } from "@/stores/use-agent-store";
 
 let loadSequence = 0;
+let skillRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let skillRetryCount = 0;
 
 type AgentSkillStore = {
     skills: AgentSkillSummary[];
@@ -38,10 +40,15 @@ export const useAgentSkillStore = create<AgentSkillStore>((set, get) => ({
     errors: [],
     loadSkills: async (endpoint, token, forceReload = false) => {
         const sequence = ++loadSequence;
+        if (skillRetryTimer) {
+            clearTimeout(skillRetryTimer);
+            skillRetryTimer = null;
+        }
         set({ loading: true });
         try {
-            const response = await fetchCodexSkills(endpoint, token, forceReload);
+            const response = await fetchAgentSkills(endpoint, token, forceReload);
             if (sequence !== loadSequence) return;
+            skillRetryCount = 0;
             const skills = response.data || [];
             const current = get();
             const selected = current.selectedSkill;
@@ -55,6 +62,11 @@ export const useAgentSkillStore = create<AgentSkillStore>((set, get) => ({
         } catch (error) {
             if (sequence !== loadSequence) return;
             set({ loading: false, loaded: true, errors: [error instanceof Error ? error.message : i18n.t("agent.state.skillReadFailed")] });
+            // 瞬态失败（如桥重启窗口）自动重试至多 2 次，避免错误横幅一直停留
+            if (skillRetryCount < 2) {
+                skillRetryCount += 1;
+                skillRetryTimer = setTimeout(() => { void get().loadSkills(endpoint, token, forceReload); }, 2500);
+            }
         }
     },
     selectSkill: (selectedSkill, prompt) => {

@@ -18,8 +18,9 @@
         url: !!js '"http://127.0.0.1:" + (process.env.CANVAS_AGENT_PORT ?? "17371") + "/mcp"'
         toolCallTimeoutMs: 600000
         # 桥由本插件在 apply 里异步拉起，首次连接可能早于 /health 就绪；
-        # 与 dsh-3d-director-desk 同口径：约 10 分钟持续重连。
+        # 与 dsh-3d-director-desk 同口径：近似无限重连（5s 退避 × 86400 次 ≈ 6 天），
+        # 避免长会话中重连耗尽后面板显示已连接而 mcp__* 工具静默失效。
         reconnect:
           initialDelayMs: 500
           maxDelayMs: 5000
-          maxAttempts: 120
+          maxAttempts: 86400

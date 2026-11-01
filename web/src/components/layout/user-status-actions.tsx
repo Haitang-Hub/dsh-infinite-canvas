@@ -73,7 +73,7 @@ function AiAssistantToggle({ iconStyle }: { iconStyle: CSSProperties | undefined
             onClick={togglePanel}
         >
             <Bot className="size-4" />
-            <span>{t("aiAssistant.title")}</span>
+            <span className="hidden sm:inline">{t("aiAssistant.title")}</span>
         </button>
     );
 }

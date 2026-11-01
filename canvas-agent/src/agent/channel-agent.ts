@@ -1,5 +1,5 @@
 import type { AgentAttachment, AgentEmit } from "./types.js";
-import { channelToolDefinitions, CHANNEL_SYSTEM_PROMPT } from "./channel-tools.js";
+import { channelToolDefinitions, skillsSystemSection, CHANNEL_SYSTEM_PROMPT, SKILL_READ_TOOL } from "./channel-tools.js";
 import { loadOrCreateChannelThread, saveChannelThread, type ChannelLlmMessage, type ChannelThread } from "./channel-threads.js";
 
 export type ChannelModelConfig = { baseUrl: string; apiKey: string; model: string };
@@ -59,6 +59,10 @@ type RunChannelTurnOptions = {
     emit: AgentEmit;
     /** 工具执行入口：与 Codex 共用 session.callTool，画布写入确认仍由网页把关。 */
     callTool: (name: string, input: unknown) => Promise<unknown>;
+    /** 已启用的 Skills 摘要（name+description），注入系统提示词供模型按需取用。 */
+    skills?: Array<{ name: string; description: string }>;
+    /** skill_read 工具的实现：按名称读取 Skill 完整指令。 */
+    readSkill?: (name: string) => Promise<unknown>;
     /** turn 结束（完成/失败/中断）后的清理回调，由 HTTP 层释放会话资源。 */
     onFinish?: () => void;
 };
@@ -93,8 +97,9 @@ export async function runChannelTurn(options: RunChannelTurnOptions): Promise<vo
             turnId,
             ...(messageMetadata || {}),
         });
-        const messages: ChannelLlmMessage[] = [{ role: "system", content: CHANNEL_SYSTEM_PROMPT }, ...thread.llmMessages];
-        const tools = channelToolDefinitions();
+        const messages: ChannelLlmMessage[] = [{ role: "system", content: CHANNEL_SYSTEM_PROMPT + skillsSystemSection(options.skills || []) }, ...thread.llmMessages];
+        const tools = [...channelToolDefinitions()];
+        if (options.skills?.length && !tools.some((tool) => tool.function.name === SKILL_READ_TOOL.function.name)) tools.push(SKILL_READ_TOOL);
 
         for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
             const response = await fetch(chatCompletionsUrl(channel.baseUrl), {
@@ -144,7 +149,11 @@ export async function runChannelTurn(options: RunChannelTurnOptions): Promise<vo
                     let result: unknown;
                     let errorText = "";
                     try {
-                        result = await callTool(call.function.name, input);
+                        if (call.function.name === SKILL_READ_TOOL.function.name && options.readSkill) {
+                            result = await options.readSkill(String((input as Record<string, unknown>)?.skill_name || ""));
+                        } else {
+                            result = await callTool(call.function.name, input);
+                        }
                         item.result = result;
                         item.status = "completed";
                     } catch (error) {
@@ -191,4 +200,51 @@ export async function runChannelTurn(options: RunChannelTurnOptions): Promise<vo
         runningTurns.delete(threadId);
         options.onFinish?.();
     }
+}
+
+type SkillDraft = { name: string; displayName?: string; description: string; instructions: string; shortDescription?: string; defaultPrompt?: string };
+
+const SKILL_DRAFT_SYSTEM_PROMPT = [
+    "你是 Skill 提炼助手。从给定的对话或画布上下文中提炼一个可复用的 Skill（操作指南）。",
+    "Skill 面向后续的同类任务，应当写成可执行的步骤指令，而不是任务结果的描述。",
+    "只输出一个 JSON 对象，不要输出其他内容，字段：",
+    `- name：小写字母/数字/连字符组成的英文标识（例如 shot-storyboard）`,
+    `- displayName：中文显示名（不超过 20 字）`,
+    `- description：一句话说明 Skill 的用途与适用场景（不超过 200 字）`,
+    `- instructions：完整步骤指令（Markdown，包含具体操作、参数与注意事项）`,
+    `- shortDescription：用于技能列表的一句话简介（25-64 字）`,
+    `- defaultPrompt：调用该 Skill 的默认提示词模板，必须包含 {{skill}} 占位符指向本 Skill`,
+].join("\n");
+
+/** 调用渠道模型一次性提炼 Skill 草稿；模型返回 JSON 解析失败时抛错。 */
+export async function draftSkillWithChannel(channel: ChannelModelConfig, context: { source: "conversation" | "canvas"; canvasContext?: string; conversationText?: string }): Promise<SkillDraft> {
+    const sourceText = context.source === "canvas"
+        ? `以下是当前画布的状态快照（JSON），请提炼其中体现的可复用流程：\n${context.canvasContext || "（空）"}`
+        : `以下是对话记录，请提炼其中可复用、值得固化为 Skill 的流程（如果没有可提炼内容，请让 name 为空）：\n${context.conversationText || "（空）"}`;
+    const response = await fetch(chatCompletionsUrl(channel.baseUrl), {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${channel.apiKey}` },
+        body: JSON.stringify({
+            model: channel.model,
+            messages: [
+                { role: "system", content: SKILL_DRAFT_SYSTEM_PROMPT },
+                { role: "user", content: sourceText },
+            ],
+            temperature: 0.2,
+        }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new Error(`提炼 Skill 失败（HTTP ${response.status}）${body ? `：${body.slice(0, 300)}` : ""}`);
+    }
+    const data = (await response.json()) as ChatCompletionResponse;
+    const text = String(data.choices?.[0]?.message?.content || "");
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("模型未返回有效的 Skill 草稿");
+    const parsed = JSON.parse(jsonMatch[0]) as SkillDraft;
+    if (!parsed || typeof parsed !== "object" || !parsed.name || !parsed.description || !parsed.instructions) {
+        throw new Error("当前对话或画布中没有值得提炼为 Skill 的内容");
+    }
+    return parsed;
 }

@@ -3,14 +3,15 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 
-import { channelModelConfig, channelModels, interruptChannelTurn, runChannelTurn } from "../agent/channel-agent.js";
+import { channelModelConfig, channelModels, draftSkillWithChannel, interruptChannelTurn, runChannelTurn, type ChannelModelConfig } from "../agent/channel-agent.js";
 import { createChannelThread, deleteChannelThread, listChannelThreads, readChannelThread } from "../agent/channel-threads.js";
 import { messageMetadataStore } from "../agent/message-metadata.js";
 import type { AgentAttachment } from "../agent/types.js";
 import { AGENT_PROTOCOL_VERSION, CanvasSession } from "../canvas/session.js";
-import { DEFAULT_PORT, ensureSiteWorkspace, loadConfig, saveConfig, updateSiteWorkspace, type CanvasAgentConfig } from "../config.js";
+import { DEFAULT_PORT, ensureSiteWorkspace, loadConfig, saveConfig, updateSiteWorkspace, VERSION, type CanvasAgentConfig } from "../config.js";
 import { logger } from "../utils/logger.js";
-import { SkillStore, SkillStoreError } from "../skills/store.js";
+import { SkillStoreError } from "../skills/store.js";
+import { SkillManager, type SkillScope } from "../skills/sources.js";
 import { registerMcpHttpEndpoint } from "./mcp-http.js";
 
 /** 启动仅监听本机的 Canvas Agent HTTP 服务。 */
@@ -22,7 +23,12 @@ export function startHttpServer() {
 
     const initialWorkspace = ensureSiteWorkspace(config);
     const session = new CanvasSession(initialWorkspace.activeThreadId || "");
-    const skillStore = new SkillStore(initialWorkspace.workspacePath);
+    const skillManager = (workspacePath = ensureSiteWorkspace(config).workspacePath) => new SkillManager(workspacePath);
+    const skillScope = (value: unknown): SkillScope => {
+        const scope = String(value || "repo");
+        if (!["repo", "user", "system"].includes(scope)) throw new SkillStoreError("Skill 来源无效", 400);
+        return scope as SkillScope;
+    };
     /** 保存并广播当前站点工作空间的活跃线程。 */
     const setActiveThread = (activeThreadId: string, payload: Record<string, unknown> = {}, preserveConversation = false) => {
         const workspace = updateSiteWorkspace(config, { activeThreadId: activeThreadId || undefined });
@@ -50,7 +56,6 @@ export function startHttpServer() {
         if (req.method === "OPTIONS") return void res.json({});
         next();
     });
-    app.get("/health", (_req, res) => res.json(session.health()));
     app.get("/config", (_req, res) => res.json({ ok: true, protocolVersion: AGENT_PROTOCOL_VERSION, url: config.url, hasToken: true }));
     // 零配置发现：本机回环端点向同源页面下发连接配置（web 端 bridge-config.ts 消费）。
     app.get("/bootstrap", (_req, res) => res.json({ ok: true, url: config.url, token: config.token }));
@@ -74,6 +79,16 @@ export function startHttpServer() {
             });
         });
     }
+    // /health 注册在 siteDir 定义之后：除 session.health() 原有字段外，追加插件壳
+    // probeBridge 依赖的自描述信息——plugin 标识"端口上是不是我们的桥"，site 标识
+    // "有没有托管站点"，version/dataDir 供壳层做版本比对与工作区展示。
+    app.get("/health", (_req, res) => res.json({
+        ...session.health(),
+        plugin: "infinite-canvas",
+        site: Boolean(siteDir),
+        version: VERSION,
+        dataDir: ensureSiteWorkspace(config).workspacePath,
+    }));
     app.use((req, res, next) => {
         if (validToken(req, requestUrl(req, config), config.token)) return next();
         res.status(401).json({ ok: false, error: "invalid token" });
@@ -127,30 +142,58 @@ export function startHttpServer() {
         res.json({ ok: true, workspace, conversation: session.conversationStateSnapshot });
     });
     app.get("/agent/codex/models", route(async (_req, res) => res.json({ ok: true, data: channelModels() })));
-    app.get("/agent/codex/skills", route(async (_req, res) => {
-        res.json({ ok: true, data: [], errors: [] });
+    // Skill 来源：repo=项目工作区、user=个人目录（可编辑）；system=随安装分发（只读）。
+    const skillsHandler = route(async (_req, res) => {
+        const { skills, errors } = await skillManager().list();
+        res.json({ ok: true, data: skills, errors });
+    });
+    app.get("/agent/skills", skillsHandler);
+    app.get("/agent/codex/skills", skillsHandler);
+    app.post("/agent/skills/draft", codexMutation(async (req, res) => {
+        const channel = channelModelConfig(req.body?.channel);
+        const source = req.body?.source === "canvas" ? "canvas" : "conversation";
+        const clientId = String(req.body?.clientId || "");
+        let canvasContext = "";
+        if (source === "canvas") {
+            const snapshot = clientId ? session.canvasStateForClient(clientId) : null;
+            if (!snapshot) return res.status(409).json({ ok: false, error: "当前页面没有可用画布" });
+            canvasContext = JSON.stringify(snapshot).slice(0, 24000);
+        }
+        const threadId = String(req.body?.threadId || "");
+        const thread = threadId ? readChannelThread(threadId) : null;
+        const conversationText = (thread?.llmMessages || [])
+            .filter((message) => typeof message.content === "string" && message.content.trim())
+            .slice(-30)
+            .map((message) => `${message.role}: ${(message.content as string).slice(0, 1200)}`)
+            .join("\n")
+            .slice(0, 48000);
+        const draft = await draftSkillWithChannel(channel, { source, canvasContext, conversationText });
+        res.json({ ok: true, data: draft });
     }));
-    app.post("/agent/codex/skills/draft", codexMutation(async (req, res) => {
-        return res.status(409).json({ ok: false, error: "渠道模型引擎暂不支持提炼 Skill" });
+    app.get("/agent/skills/:name", route(async (req, res) => {
+        res.json({ ok: true, data: await skillManager().store(skillScope(req.query.scope)).get(routeParam(req.params.name)) });
     }));
-    app.get("/agent/codex/skills/:name", route(async (req, res) => {
-        res.json({ ok: true, data: await skillStore.get(routeParam(req.params.name)) });
-    }));
-    app.post("/agent/codex/skills", codexMutation(async (req, res) => {
-        const data = await skillStore.create(req.body);
+    app.post("/agent/skills", codexMutation(async (req, res) => {
+        const scope = skillScope(req.body?.scope);
+        const data = await skillManager().store(scope).create(req.body);
         session.emitAll("skills_changed", { forceReload: true });
-        res.status(201).json({ ok: true, data });
+        res.json({ ok: true, data });
     }));
-    app.post("/agent/codex/skills/:name/enabled", codexMutation(async (req, res) => {
-        return res.status(409).json({ ok: false, error: "渠道模型引擎暂不支持启停 Skill" });
-    }));
-    app.post("/agent/codex/skills/:name/delete", codexMutation(async (req, res) => {
-        await skillStore.delete(routeParam(req.params.name), String(req.body?.expectedRevision || ""));
+    app.post("/agent/skills/:name/enabled", codexMutation(async (req, res) => {
+        const scope = skillScope(req.body?.scope);
+        await skillManager().setEnabled(scope, routeParam(req.params.name), Boolean(req.body?.enabled));
         session.emitAll("skills_changed", { forceReload: true });
         res.json({ ok: true });
     }));
-    app.post("/agent/codex/skills/:name", codexMutation(async (req, res) => {
-        const data = await skillStore.update(routeParam(req.params.name), req.body);
+    app.post("/agent/skills/:name/delete", codexMutation(async (req, res) => {
+        const scope = skillScope(req.body?.scope);
+        await skillManager().store(scope).delete(routeParam(req.params.name), String(req.body?.expectedRevision || ""));
+        session.emitAll("skills_changed", { forceReload: true });
+        res.json({ ok: true });
+    }));
+    app.post("/agent/skills/:name", codexMutation(async (req, res) => {
+        const scope = skillScope(req.body?.scope);
+        const data = await skillManager().store(scope).update(routeParam(req.params.name), req.body);
         session.emitAll("skills_changed", { forceReload: true });
         res.json({ ok: true, data });
     }));
@@ -256,6 +299,9 @@ export function startHttpServer() {
                 message: { id: `${threadId}:${turnId}:synthetic:user`, itemId: "synthetic:user", clientMessageId: messageId, threadId, turnId, role: "user", text: messageText, ...messageMetadata },
             });
             logger.info("Channel turn started", { threadId, turnId, model: channel.model });
+            const manager = skillManager();
+            const { skills: allSkills } = await manager.list();
+            const enabledSkills = allSkills.filter((skill) => skill.enabled).map((skill) => ({ name: skill.name, description: skill.description }));
             void runChannelTurn({
                 prompt: withAttachmentContext(prompt, attachmentRefs),
                 threadId,
@@ -267,6 +313,12 @@ export function startHttpServer() {
                 channel,
                 emit: lifecycleEmit,
                 callTool: (name, input) => session.callTool(name, input),
+                skills: enabledSkills,
+                readSkill: (name) => {
+                    const match = allSkills.find((skill) => skill.name === name && skill.enabled);
+                    if (!match) throw new Error(`找不到已启用的 Skill：${name}`);
+                    return manager.readInstructions(match.scope, name);
+                },
                 onFinish: () => {
                     logger.info("Channel turn finished", { threadId, turnId });
                     session.clearTurnAttachments(clientId);

@@ -8,6 +8,7 @@ import { getNodePluginId, listNodeDefinitions, useNodeRegistryVersion } from "@/
 import { getNodeSpec } from "@/constant/canvas";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
+import { useAgentPanelInset } from "@/hooks/use-agent-panel-inset";
 import { useTranslation } from "react-i18next";
 
 export function CanvasToolbar({
@@ -67,6 +68,20 @@ export function CanvasToolbar({
     const theme = canvasThemes[colorTheme];
     const [hovered, setHovered] = useState<string | null>(null);
     const [tipX, setTipX] = useState(0);
+    // 停靠打开的 Agent 面板占据一侧时，工具栏同步避让，避免半透明面板下透出双重控件
+    const panelInset = useAgentPanelInset();
+    const insetStyle: CSSProperties = {};
+    let dockHidden = false;
+    if (panelInset.side === "right") {
+        const inset = Math.min(panelInset.width, window.innerWidth);
+        insetStyle.right = `min(${panelInset.width}px, 100vw)`;
+        // 面板几乎占满视口时主工具栏无处安放：隐藏（缩放控件仍在，面板自带对话能力）
+        dockHidden = window.innerWidth - inset - (window.innerWidth < 900 ? 12 : 300) < 220;
+    } else if (panelInset.side === "left") {
+        const inset = Math.max(300, Math.min(panelInset.width, window.innerWidth));
+        insetStyle.left = `max(300px, min(${panelInset.width}px, 100vw))`;
+        dockHidden = window.innerWidth - inset < 220;
+    }
     const [appearanceOpen, setAppearanceOpen] = useState(false);
     const [panelX, setPanelX] = useState(0);
     const [extensionsOpen, setExtensionsOpen] = useState(false);
@@ -92,8 +107,10 @@ export function CanvasToolbar({
         return () => document.removeEventListener("pointerdown", handlePointerDown, true);
     }, [extensionsOpen, appearanceOpen]);
 
+    if (dockHidden) return null;
+
     return (
-        <div ref={rootRef} className="pointer-events-none absolute bottom-5 z-50 flex justify-center" style={{ left: 300, right: 16 }}>
+        <div ref={rootRef} style={insetStyle} className="pointer-events-none absolute bottom-5 left-[300px] right-4 z-50 flex justify-center max-[900px]:bottom-3 max-[900px]:left-3 max-[900px]:right-3">
             {tip ? <DockTip label={tip} x={tipX} theme={theme} /> : null}
             <div ref={wrapRef} className="thin-scrollbar pointer-events-auto flex h-14 max-w-full items-center gap-1 overflow-x-auto rounded-xl border px-2 shadow-lg backdrop-blur [&>*]:shrink-0" style={dockStyle}>
                 <ToolbarButton id={`tool-${canvasTool}`} label={t(`canvas.toolbar.${canvasTool}`)} active hovered={hovered} activeStyle={activeStyle} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={() => onCanvasToolChange(canvasTool === "select" ? "pan" : "select")}>

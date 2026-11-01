@@ -2,7 +2,8 @@
 
 export type BridgeConfig = { url: string; token: string };
 
-export const DEFAULT_BRIDGE_URL = "http://127.0.0.1:17371";
+/** 独立开发态（vite 5075）的桥默认地址：开发桥端口 17381，与 Desktop 插件桥的 17371 错开。 */
+export const DEFAULT_BRIDGE_URL = "http://127.0.0.1:17381";
 
 let bootstrapPromise: Promise<BridgeConfig | null> | null = null;
 
