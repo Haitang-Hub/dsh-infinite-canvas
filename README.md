@@ -78,10 +78,10 @@ cd web && npm install --legacy-peer-deps && npm run build
 cd ../canvas-agent && npm install && npm run build:bundle
 
 # 3. 同步资产并打包（dsh-plugin/）
-cd ../dsh-plugin && npm run pack:all   # = sync + npm pack，产出 dsh-infinite-canvas-0.1.0.tgz
+cd ../dsh-plugin && npm run pack:all   # = sync + npm pack，产出 dsh-infinite-canvas-0.2.6.tgz
 
 # 4. 安装到 DSH Desktop
-dsh plugin --profile web add /绝对路径/dsh-infinite-canvas-0.1.0.tgz
+dsh plugin --profile web add /绝对路径/dsh-infinite-canvas-0.2.6.tgz
 # 5. 完整退出并重新打开 Desktop（安装/替换包必须重启才载入新 JS 模块代码）
 ```
 
@@ -90,7 +90,7 @@ dsh plugin --profile web add /绝对路径/dsh-infinite-canvas-0.1.0.tgz
 
 ## 验收（按工作台规范第 8 节）
 
-1. `npm pack` 后 `tar -tzf dsh-infinite-canvas-0.1.0.tgz` 核对 `package.json`、`dsh/`、
+1. `npm pack` 后 `tar -tzf dsh-infinite-canvas-0.2.6.tgz` 核对 `package.json`、`dsh/`、
    `lib/`、`bridge/`、`site/`、`cordis.patch.yml`；
 2. `dsh --profile web --dump-config` 出现本包两层条目（只证明配置，不代表界面已加载）；
 3. Desktop 右侧栏「开始」引导页出现「无限画布」入口，打开后面板显示画布；

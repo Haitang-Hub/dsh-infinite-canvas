@@ -6,8 +6,8 @@
  *      8 秒心跳复查，桥掉线自动重建；
  *   2. 暴露 GET /api/infinite-canvas.bridge-info，面板据此显示画布或恢复引导；
  *   3. 暴露 POST /api/infinite-canvas.restart-bridge，让用户在面板上手动重建服务；
- *   4. 对外部桥做能力探测：/health 健康还不够，`GET /` 必须是含 `id="root"` 的 HTML，
- *      否则 iframe 只会拿到 JSON 404。
+ *   4. 对端口占用者做能力探测：优先读 /health 自报的 plugin/site 字段（0.2.6+ 桥），
+ *      旧版桥回退 `GET /` 含 `id="root"` 的 HTML 判据；并区分「开发态桥占用」与无关进程。
  *
  * 工具注册不在本入口：cordis.patch.yml 里的 dsh-mcp-client 条目把桥的 /mcp 门面
  * 注册为 mcp__infinite-canvas__* 原生工具（streamable-http）。
@@ -79,6 +79,8 @@ async function waitForHealth(url, timeoutMs, signal) {
  * 探测端口上既有的 HTTP 服务：健康 + 站点能力。
  * `listening=true` 表示端口已被占用（哪怕对面不是我们的桥），调用方据此决定复用还是报错，
  * 而不是盲目 spawn 撞 EADDRINUSE。
+ * 判据优先级：/health 自报 plugin/site（新版桥）→ 回退 GET / 含 id="root" 的 HTML（旧版桥）。
+ * devBridge=true 表示端口上是自家开发态桥（健康但没伺服站点），文案要与无关进程区分开。
  */
 async function probeBridge(baseUrl) {
   let health
@@ -90,6 +92,15 @@ async function probeBridge(baseUrl) {
   const payload = await health.json().catch(() => null)
   if (!health.ok || !payload?.ok) {
     return { ok: false, listening: true, reason: `health 异常：HTTP ${health.status}` }
+  }
+  if (payload.plugin) {
+    if (payload.plugin !== 'infinite-canvas') {
+      return { ok: false, listening: true, reason: `health 自报 plugin=${payload.plugin}，不是本插件桥` }
+    }
+    if (payload.site === false) {
+      return { ok: false, listening: true, devBridge: true, reason: '画布桥健康但未伺服站点（开发态启动，未设 CANVAS_SITE_DIR）' }
+    }
+    return { ok: true, listening: true }
   }
   try {
     const site = await fetch(`${baseUrl}/`, { signal: AbortSignal.timeout(2000) })
@@ -190,36 +201,53 @@ export async function apply(ctx, config) {
   /**
    * 保证桥可用。`force` 为真时忽略现有桥（先杀掉自己托管的子进程再重建）。
    * 心跳与手动重启都走这里，避免两处逻辑漂移。
+   * 心跳探测进行中收到的 force 请求不会丢：记入 restartPending，本次结束后补一次重建，
+   * 否则「重启服务」按钮会在 starting 窗口内静默失效。
    */
-  async function ensureBridge(force) {
-    if (state.starting) return
-    state.starting = true
-    try {
-      if (force && state.child) {
-        try { state.child.kill() } catch { /* 已经退出 */ }
-        state.child = null
-        state.ready = false
-      }
-      if (!force) {
-        const probe = await probeBridge(baseUrl)
-        if (probe.ok) {
-          if (!state.ready) ctx.logger.info('infinite-canvas: reusing healthy bridge; url=%s', baseUrl)
-          state.ready = true
-          state.error = undefined
-          return
-        }
-        state.ready = false
-        if (probe.listening) {
-          // 端口被别的进程占着且不能伺服站点：不要 spawn（只会 EADDRINUSE），给出可操作原因。
-          state.error = `端口 ${config.port} 被占用，且该进程无法提供画布站点（${probe.reason}）。关闭它后会自动重试。`
-          return
-        }
-      }
-      if (!config.spawn) {
-        state.error = '插件配置 spawn=false，只复用外部桥；当前没有可用桥'
+  let restartPending = false
+  async function ensureOnce(force) {
+    if (force && state.child) {
+      try { state.child.kill() } catch { /* 已经退出 */ }
+      state.child = null
+      state.ready = false
+    }
+    if (!force) {
+      const probe = await probeBridge(baseUrl)
+      if (probe.ok) {
+        if (!state.ready) ctx.logger.info('infinite-canvas: reusing healthy bridge; url=%s', baseUrl)
+        state.ready = true
+        state.error = undefined
         return
       }
-      if (await spawnBridge()) state.restarts += 1
+      state.ready = false
+      if (probe.listening) {
+        // 端口被占住且不能提供站点：不要 spawn（只会 EADDRINUSE），给出可操作原因。
+        // devBridge（自家开发态桥）与无关进程的文案区分开，用户才知道该关哪个。
+        state.error = probe.devBridge
+          ? `端口 ${config.port} 被开发态画布桥占用（${probe.reason}）。关闭它后会自动重试。`
+          : `端口 ${config.port} 被占用，且该进程无法提供画布站点（${probe.reason}）。关闭它后会自动重试。`
+        return
+      }
+    }
+    if (!config.spawn) {
+      state.error = '插件配置 spawn=false，只复用外部桥；当前没有可用桥'
+      return
+    }
+    if (await spawnBridge()) state.restarts += 1
+  }
+
+  async function ensureBridge(force) {
+    if (state.starting) {
+      if (force) restartPending = true
+      return
+    }
+    state.starting = true
+    try {
+      await ensureOnce(force)
+      if (restartPending) {
+        restartPending = false
+        await ensureOnce(true)
+      }
     } finally {
       state.starting = false
     }
