@@ -74,7 +74,10 @@ export function startHttpServer() {
         app.use((req, res, next) => {
             if (req.method !== "GET" && req.method !== "HEAD") return next();
             if (!String(req.headers.accept || "").includes("text/html")) return next();
-            res.sendFile(path.join(siteDir, "index.html"), (error) => {
+            // 用 root 相对定位而非绝对路径：send 的 dotfile 保护会把绝对路径中任何
+            // . 开头的目录段（如数据根 ~/.dsh）判成隐藏文件直接 404，而 express.static
+            // 走 root 相对形式只检查 URL 相对段所以不受影响——同文件一成一败即此因。
+            res.sendFile("index.html", { root: siteDir }, (error) => {
                 if (error && !res.headersSent) res.status(404).json({ ok: false, error: "site index.html missing" });
             });
         });

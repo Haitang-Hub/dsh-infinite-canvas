@@ -24,7 +24,7 @@ export function readStoredBridgeConfig(): BridgeConfig {
  * 默认桥地址：插件托管形态下页面由桥本身伺服（同源），直接用当前 origin；
  * 独立开发态（vite 固定 5075）回退到固定回环端口。
  */
-function defaultBridgeUrl(): string {
+export function defaultBridgeUrl(): string {
     try {
         const { protocol, hostname } = window.location;
         if (protocol === "http:" || protocol === "https:") {

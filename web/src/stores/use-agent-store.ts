@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import i18n from "@/i18n";
 
+import { defaultBridgeUrl } from "@/lib/agent/bridge-config";
 import type { CanvasAgentOp, CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 
@@ -129,7 +130,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     panelLayout: typeof window === "undefined" ? null : loadPanelLayout(),
     glassOpacity: typeof window === "undefined" ? 100 : Math.min(100, Math.max(20, Number(localStorage.getItem(GLASS_OPACITY_KEY)) || 100)),
     canvasContext: null,
-    url: typeof window === "undefined" ? "http://127.0.0.1:17371" : localStorage.getItem("canvas-agent-url") || "http://127.0.0.1:17371",
+    url: typeof window === "undefined" ? defaultBridgeUrl() : localStorage.getItem("canvas-agent-url") || defaultBridgeUrl(),
     token: typeof window === "undefined" ? "" : localStorage.getItem("canvas-agent-token") || "",
     connected: false,
     enabled: false,

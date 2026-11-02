@@ -9,6 +9,7 @@ const AGENT_START_COMMAND = "npx -y @basketikun/canvas-agent@latest";
 
 export function AgentConnectView({
     theme,
+    bridgeHosted,
     url,
     token,
     enabled,
@@ -20,6 +21,8 @@ export function AgentConnectView({
     onToggleEnabled,
 }: {
     theme: (typeof canvasThemes)[keyof typeof canvasThemes];
+    /** 页面由桥伺服（插件托管/同源）时为真：本地 Agent 必然已在运行，隐藏终端启动引导。 */
+    bridgeHosted?: boolean;
     url: string;
     token: string;
     enabled: boolean;
@@ -44,21 +47,23 @@ export function AgentConnectView({
                 <div>
                     <div className="text-base font-semibold leading-6">{t("agent.connect.title")}</div>
                     <div className="mt-1 text-xs leading-5" style={{ color: theme.node.muted }}>
-                        {t("agent.connect.description")}
+                        {t(bridgeHosted ? "agent.connect.hostedDescription" : "agent.connect.description")}
                     </div>
                 </div>
-                <div className="rounded-lg px-3 py-2.5">
-                    <div className="text-sm font-medium leading-5">{t("agent.connect.directTitle")}</div>
-                    <div className="mt-1 text-xs leading-5" style={{ color: theme.node.muted }}>
-                        {t("agent.connect.directText")}
+                {bridgeHosted ? null : (
+                    <div className="rounded-lg px-3 py-2.5">
+                        <div className="text-sm font-medium leading-5">{t("agent.connect.directTitle")}</div>
+                        <div className="mt-1 text-xs leading-5" style={{ color: theme.node.muted }}>
+                            {t("agent.connect.directText")}
+                        </div>
+                        <div className="mt-2 flex items-center gap-2 rounded-md border bg-transparent px-2 py-1.5" style={{ borderColor: theme.node.stroke, color: theme.node.text }}>
+                            <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-[11px] leading-5">{AGENT_START_COMMAND}</code>
+                            <Tooltip title={t("agent.connect.copyCommand")}>
+                                <Button size="small" type="text" className="!h-6 !w-6 !min-w-6" icon={<Copy className="size-3.5" />} onClick={() => copyCommand(AGENT_START_COMMAND)} />
+                            </Tooltip>
+                        </div>
                     </div>
-                    <div className="mt-2 flex items-center gap-2 rounded-md border bg-transparent px-2 py-1.5" style={{ borderColor: theme.node.stroke, color: theme.node.text }}>
-                        <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-[11px] leading-5">{AGENT_START_COMMAND}</code>
-                        <Tooltip title={t("agent.connect.copyCommand")}>
-                            <Button size="small" type="text" className="!h-6 !w-6 !min-w-6" icon={<Copy className="size-3.5" />} onClick={() => copyCommand(AGENT_START_COMMAND)} />
-                        </Tooltip>
-                    </div>
-                </div>
+                )}
                 <div className="rounded-lg border p-3" style={{ borderColor: theme.node.stroke }}>
                     <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">

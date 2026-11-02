@@ -2,6 +2,8 @@
 
 ## Unreleased
 
++ [修复] 插件 0.2.8：AI 助手连接设置两处体验缺口——①「直接运行 Agent」终端引导在插件托管形态（页面由桥同源伺服）下隐藏并改说明文案，该引导只适用于独立/开发形态，插件里照做会再起一个无关实例（17381）误导用户；②连接失败时自动向桥 `/bootstrap` 重取一次令牌并重连（按连接代际限一次）：桥重建/换包后本地存储的旧 token 不再卡死为「连接失败，请检查地址和 token」；③首次加载（localStorage 为空）的零配置发现真正接通：无 token 时先取 /bootstrap（目标端点优先、再试 17381 默认端口），默认桥地址改按页面形态推断（同源 origin / 开发态 17381），不再写死 17371。
++ [修复] 插件 0.2.8 / 桥 0.6.1：BrowserRouter 深链刷新（/canvas/* 直接 GET）返回 "site index.html missing"——send 的 dotfile 保护把绝对路径中 `.` 开头的目录段（数据根 `~/.dsh`）判成隐藏文件直接 404，而 express.static 走 root 相对形式不受影响（同文件一成一败）；SPA 回退改 `res.sendFile("index.html", { root: siteDir })` 相对定位，与数据目录所在层级无关。
 + [修复] 插件 0.2.7：装进 dsh-desktop 0.2.1-rc.5 后 web boot 报「1 entry did not activate / pending (waiting for service: desktopWorkbenches)」并弹致命框——宿主 rc 线已整体移除工作台 API（app 包内已无任何 workbench 字样），客户端壳 `inject` 里的 `desktopWorkbenches` 永远等不到；改为 apply 内 `ctx.get` 可选探测（服务存在才注册工作台 provider，旧宿主行为不变），inject 收敛为 `sidebarRightTabs`/`slots`/`sidebarRight`。代价：rc.5 起「工作台页」入口（左会话右画布分栏）随宿主功能删除而消失，右侧栏标签不受影响。
 + [变更] 开发态桥端口 17371→17381（config.ts DEFAULT_PORT、start.ps1、web bridge-config 默认值同步），与 Desktop 插件桥的 17371 永久错开；开发态直启不再抢占插件桥端口，跨项目启动脚本（canvas 的 start.ps1 起导演台开发桥）同步改用 STORE_PORT=17383。
 + [修复] 插件 0.2.6：「重启服务」在心跳探测进行中静默失效——starting 窗口内的强制重建请求改记入 restartPending，本次探测结束后补一次重建；probeBridge 改以 /health 自报的 plugin/site 为判据（旧版桥回退 `GET /` 含 id="root" 判据），并区分「开发态画布桥占用」与无关进程的报错文案；MCP 重连上限 120 次（约 10 分钟）放宽到近似无限（5s 退避 ×86400），避免长会话中工具静默失效；面板 iframe/新窗口地址改用 bridge-info 下发的 host，不再写死 127.0.0.1；面板轮询与心跳统一 8s。

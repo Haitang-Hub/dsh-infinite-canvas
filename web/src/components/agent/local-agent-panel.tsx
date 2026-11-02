@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
 import { readAgentUrlBootstrap } from "@/lib/agent/agent-url-bootstrap";
+import { DEFAULT_BRIDGE_URL, defaultBridgeUrl, fetchBridgeBootstrap } from "@/lib/agent/bridge-config";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { upscaleDataUrl } from "@/lib/canvas/canvas-image-data";
 import { imageMetadata } from "@/lib/canvas/canvas-node-factory";
@@ -74,7 +75,8 @@ const MAX_ATTACHMENTS = 6;
 const MAX_ATTACHMENT_PAYLOAD_BYTES = 28 * 1024 * 1024;
 const MESSAGE_PREVIEW_LONG_EDGE = 192;
 const MESSAGE_PREVIEW_MAX_LENGTH = 500_000;
-const DEFAULT_AGENT_URL = "http://127.0.0.1:17371";
+// 默认桥地址按页面形态推断：插件托管（同源）用当前 origin，独立开发态（vite 5075）回退 17381。
+const DEFAULT_AGENT_URL = defaultBridgeUrl();
 const AGENT_PROTOCOL_VERSION = 7;
 const HISTORY_RETRY_DELAYS_MS = [0, 150, 350, 700, 1200];
 const rt = (key: string, options?: Record<string, unknown>) => i18n.t(`agent.runtime.${key}`, options);
@@ -347,6 +349,7 @@ export function LocalAgentPanel({ embedded, headless }: { embedded?: boolean; he
         const clientId = clientIdRef.current;
         let disposed = false;
         let protocolRejected = false;
+        let healAttempted = false;
         let eventQueue = Promise.resolve();
         const isCurrentConnection = () => !disposed && clientIdRef.current === clientId;
         const enqueueEvent = (task: () => void | Promise<void>) => {
@@ -544,7 +547,7 @@ export function LocalAgentPanel({ embedded, headless }: { embedded?: boolean; he
                 showAgentError(data.message, data, !data.replayed);
             });
         });
-        source.onerror = () => {
+        source.onerror = async () => {
             if (disposed || protocolRejected) return;
             const wasConnected = connectedRef.current;
             const silent = useAgentStore.getState().silentConnect && !wasConnected;
@@ -568,8 +571,29 @@ export function LocalAgentPanel({ embedded, headless }: { embedded?: boolean; he
                 pendingApprovals: [],
             });
             useAgentSkillStore.getState().reset();
+            if (!wasConnected) source.close();
+            // 401 自愈：本地令牌过期（桥重建/换包/换实例）而桥本身活着时，向 /bootstrap 重取
+            // 一次令牌并自动重连。healAttempted 按连接代际记一次，令牌没变或桥不可达则维持
+            // 原失败路径；自愈后的新连接若仍失败会走正常报错，不会无限重试。
+            if (!healAttempted) {
+                healAttempted = true;
+                const refreshed = await fetchBridgeBootstrap(endpoint).catch(() => null);
+                if (!disposed && isCurrentConnection() && refreshed && refreshed.token !== token) {
+                    addEventLog(rt("tokenRefreshed"), "");
+                    setAgentState({
+                        url: refreshed.url,
+                        token: refreshed.token,
+                        enabled: true,
+                        connected: false,
+                        silentConnect: true,
+                        fragmentBootstrap: false,
+                        activity: rt("connecting"),
+                        connectError: "",
+                    });
+                    return;
+                }
+            }
             if (!wasConnected) {
-                source.close();
                 setAgentState({ enabled: false });
             }
         };
@@ -911,9 +935,20 @@ export function LocalAgentPanel({ embedded, headless }: { embedded?: boolean; he
         }
         const urlToken = searchParams.get("agentToken") || "";
         const urlEndpoint = searchParams.get("agentUrl") || "";
-        const discovered = urlToken ? null : await discoverAgentConfig(endpoint || DEFAULT_AGENT_URL);
-        const nextEndpoint = (urlEndpoint || discovered?.url || endpoint || DEFAULT_AGENT_URL).trim().replace(/\/$/, "");
-        const nextToken = (urlToken || token.trim() || discovered?.token || "").trim();
+        const preferredEndpoint = (endpoint || DEFAULT_AGENT_URL).trim().replace(/\/$/, "");
+        const discovered = urlToken ? null : await discoverAgentConfig(preferredEndpoint);
+        let nextEndpoint = (urlEndpoint || discovered?.url || preferredEndpoint).trim().replace(/\/$/, "");
+        let nextToken = (urlToken || token.trim() || discovered?.token || "").trim();
+        // 零配置兜底：手上没有任何 token 时向桥请求 /bootstrap（目标端点优先，再试独立开发默认端口）。
+        // 首次加载（localStorage 为空）的插件托管形态靠这条路径拿到 token。
+        if (!nextToken) {
+            const bootstrapped = (await fetchBridgeBootstrap(nextEndpoint))
+                ?? (nextEndpoint === DEFAULT_BRIDGE_URL ? null : await fetchBridgeBootstrap(DEFAULT_BRIDGE_URL));
+            if (bootstrapped) {
+                nextEndpoint = bootstrapped.url;
+                nextToken = bootstrapped.token;
+            }
+        }
         if (!nextEndpoint) {
             const text = rt("addressRequired");
             if (!silent) {
@@ -969,6 +1004,16 @@ export function LocalAgentPanel({ embedded, headless }: { embedded?: boolean; he
     useEffect(() => {
         if (urlAgentAutoConnect && confirmTools) setAgentState({ confirmTools: false });
     }, [confirmTools, setAgentState, urlAgentAutoConnect]);
+
+    // 插件托管形态判定：页面本身由桥伺服（同源）——本地 Agent 必然已在运行，
+    // 「直接运行 Agent」终端引导只会误导（引导起的会是另一个实例），隐藏之。
+    const bridgeHosted = useMemo(() => {
+        try {
+            return new URL(endpoint || window.location.origin).origin === window.location.origin;
+        } catch {
+            return false;
+        }
+    }, [endpoint]);
 
     useEffect(() => {
         if (autoConnectRef.current || enabled || connected) return;
@@ -1366,6 +1411,7 @@ export function LocalAgentPanel({ embedded, headless }: { embedded?: boolean; he
             {activeTab === "setup" ? (
                 <AgentConnectView
                     theme={theme}
+                    bridgeHosted={bridgeHosted}
                     url={url}
                     token={token}
                     enabled={enabled}
