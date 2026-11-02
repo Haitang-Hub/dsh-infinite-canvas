@@ -2,6 +2,7 @@
 
 ## Unreleased
 
++ [修复] 插件 0.2.7：装进 dsh-desktop 0.2.1-rc.5 后 web boot 报「1 entry did not activate / pending (waiting for service: desktopWorkbenches)」并弹致命框——宿主 rc 线已整体移除工作台 API（app 包内已无任何 workbench 字样），客户端壳 `inject` 里的 `desktopWorkbenches` 永远等不到；改为 apply 内 `ctx.get` 可选探测（服务存在才注册工作台 provider，旧宿主行为不变），inject 收敛为 `sidebarRightTabs`/`slots`/`sidebarRight`。代价：rc.5 起「工作台页」入口（左会话右画布分栏）随宿主功能删除而消失，右侧栏标签不受影响。
 + [变更] 开发态桥端口 17371→17381（config.ts DEFAULT_PORT、start.ps1、web bridge-config 默认值同步），与 Desktop 插件桥的 17371 永久错开；开发态直启不再抢占插件桥端口，跨项目启动脚本（canvas 的 start.ps1 起导演台开发桥）同步改用 STORE_PORT=17383。
 + [修复] 插件 0.2.6：「重启服务」在心跳探测进行中静默失效——starting 窗口内的强制重建请求改记入 restartPending，本次探测结束后补一次重建；probeBridge 改以 /health 自报的 plugin/site 为判据（旧版桥回退 `GET /` 含 id="root" 判据），并区分「开发态画布桥占用」与无关进程的报错文案；MCP 重连上限 120 次（约 10 分钟）放宽到近似无限（5s 退避 ×86400），避免长会话中工具静默失效；面板 iframe/新窗口地址改用 bridge-info 下发的 host，不再写死 127.0.0.1；面板轮询与心跳统一 8s。
 + [新增] canvas-agent /health 增加 plugin/site/version/dataDir 字段（站点能力探测单点判据）；新增 `npm run selftest`（spawn 桥断言 health/bootstrap/静态站点/401 鉴权回路）；sync-assets 支持显式 `--layout full|root`，缺 web/dist 时硬失败（可用 --skip-site 显式跳过），杜绝打出没有站点的 tgz。

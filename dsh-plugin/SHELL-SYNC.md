@@ -14,8 +14,10 @@
 
 两边**预期内**的差异（归一化后仍会出现的，属插件特有功能，不算漂移）：
 
-- 画布侧：工作台 provider（`desktopWorkbenches.register`）、"画布页→宿主打开导演台标签"
-  的 postMessage 监听、`agent-instructions` 相关注释；
+- 画布侧："画布页→宿主打开导演台标签"的 postMessage 监听、`agent-instructions` 相关注释、
+  工作台 provider（可选探测 `ctx.get('desktopWorkbenches')` 后才 register，**不进 inject**——
+  宿主 0.2.1-rc.5 已移除该服务，inject 会让条目永久 pending 炸掉 web boot；
+  旧宿主上仍生效，导演台侧无此入口）；
 - 导演台侧：`useTabInfo` 的 `instanceId` 导航参数（画布经 openTab 打开时用）、
   React 19 + three.js 相关注释。
 
