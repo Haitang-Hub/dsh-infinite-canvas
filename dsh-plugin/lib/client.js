@@ -193,17 +193,22 @@ window.__ModuleLoader__.load({
           console.warn('[dsh-infinite-canvas] 快捷键服务不可用，「打开无限画布」未注册')
           return
         }
-        const dispose = shortcuts.register({
-          id: CANVAS_COMMAND_ID,
-          label: '打开无限画布',
-          aliases: [],
-          defaults: Object.fromEntries(SHORTCUT_PROFILES.map(profile => [profile, CANVAS_BINDING])),
-          regions: ['page', 'editable'],
-          modals: [],
-          resolve: () => ({ status: 'handled', run: () => ctx.sidebarRight.openTab(TAB_KIND) }),
-        })
-        canvasCommandReady = true
-        return dispose
+        try {
+          const dispose = shortcuts.register({
+            id: CANVAS_COMMAND_ID,
+            // label 必须是函数：宿主 locale 订阅器会调用 label() 做本地化，字符串会炸掉订阅器
+            label: () => '打开无限画布',
+            aliases: [],
+            defaults: Object.fromEntries(SHORTCUT_PROFILES.map(profile => [profile, CANVAS_BINDING])),
+            regions: ['page', 'editable'],
+            modals: [],
+            resolve: () => ({ status: 'handled', run: () => ctx.sidebarRight.openTab(TAB_KIND) }),
+          })
+          canvasCommandReady = true
+          return dispose
+        } catch (error) {
+          console.warn('[dsh-infinite-canvas] 快捷键注册失败（已忽略，不影响启动）：', error instanceof Error ? error.message : String(error))
+        }
       }, 'infinite-canvas: open-canvas shortcut')
 
       // 1) 标签类型：右侧栏需要一个 kind 才认领这个标签；guide 数组决定「开始」引导页里的入口。
