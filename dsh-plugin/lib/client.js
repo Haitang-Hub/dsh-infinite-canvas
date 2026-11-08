@@ -30,6 +30,12 @@ window.__ModuleLoader__.load({
     const TAB_ID = 'dsh-infinite-canvas'
     const TAB_KIND = 'infinite-canvas'
 
+    // 快捷键「主键+Shift+C 打开画布」：id 即命令 id，guide 条目按登记结果带 commandId。
+    // Web 白名单允许「主键+Shift/Alt+字母」，与 dsh-pet 的 Ctrl+Shift+P 同族不冲突。
+    const CANVAS_COMMAND_ID = 'infinite-canvas.open'
+    const CANVAS_BINDING = { code: 'KeyC', modifiers: ['primary', 'shift'] }
+    const SHORTCUT_PROFILES = ['desktop:macos', 'desktop:windows', 'desktop:linux', 'web:macos', 'web:windows']
+
     const SHELL_STYLE = {
       display: 'flex',
       flexDirection: 'column',
@@ -177,6 +183,29 @@ window.__ModuleLoader__.load({
     }
 
     function apply(ctx) {
+      // 0) 快捷键：主键+Shift+C 打开画布标签。shortcuts 是可选服务——ctx.get 探测，
+      //    绝不进 inject（同 desktopWorkbenches 教训）；没登记成功就不带 commandId，
+      //    指向不存在的命令会让侧栏注册抛错。
+      let canvasCommandReady = false
+      ctx.effect(() => {
+        const shortcuts = typeof ctx.get === 'function' ? ctx.get('shortcuts') : undefined
+        if (!shortcuts || typeof shortcuts.register !== 'function') {
+          console.warn('[dsh-infinite-canvas] 快捷键服务不可用，「打开无限画布」未注册')
+          return
+        }
+        const dispose = shortcuts.register({
+          id: CANVAS_COMMAND_ID,
+          label: '打开无限画布',
+          aliases: [],
+          defaults: Object.fromEntries(SHORTCUT_PROFILES.map(profile => [profile, CANVAS_BINDING])),
+          regions: ['page', 'editable'],
+          modals: [],
+          resolve: () => ({ status: 'handled', run: () => ctx.sidebarRight.openTab(TAB_KIND) }),
+        })
+        canvasCommandReady = true
+        return dispose
+      }, 'infinite-canvas: open-canvas shortcut')
+
       // 1) 标签类型：右侧栏需要一个 kind 才认领这个标签；guide 数组决定「开始」引导页里的入口。
       ctx.effect(() => ctx.sidebarRightTabs.register({
         id: TAB_ID,
@@ -186,6 +215,7 @@ window.__ModuleLoader__.load({
           order: 30,
           title: () => '无限画布',
           description: () => '节点编排、图像生成与导出，和对话并排使用',
+          ...(canvasCommandReady ? { commandId: CANVAS_COMMAND_ID } : {}),
         }],
       }), 'infinite-canvas: sidebar tab type')
 
