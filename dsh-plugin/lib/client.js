@@ -30,10 +30,11 @@ window.__ModuleLoader__.load({
     const TAB_ID = 'dsh-infinite-canvas'
     const TAB_KIND = 'infinite-canvas'
 
-    // 快捷键「主键+Shift+C 打开画布」：id 即命令 id，guide 条目按登记结果带 commandId。
-    // Web 白名单允许「主键+Shift/Alt+字母」，与 dsh-pet 的 Ctrl+Shift+P 同族不冲突。
+    // 快捷键「主键+Alt+C 打开画布」：id 即命令 id，guide 条目按登记结果带 commandId。
+    // C 被固定操作 Ctrl+C 占用（宿主键位校验：同一修饰键集合下含固定操作占用的按键冲突，
+    // Ctrl+Shift+C 实测被拒），换 primary+alt 集合保留 C 记忆点；web 白名单允许「主键+Shift/Alt+字母」。
     const CANVAS_COMMAND_ID = 'infinite-canvas.open'
-    const CANVAS_BINDING = { code: 'KeyC', modifiers: ['primary', 'shift'] }
+    const CANVAS_BINDING = { code: 'KeyC', modifiers: ['primary', 'alt'] }
     const SHORTCUT_PROFILES = ['desktop:macos', 'desktop:windows', 'desktop:linux', 'web:macos', 'web:windows']
 
     const SHELL_STYLE = {
