@@ -13,6 +13,15 @@ function Test-PortListening([int]$Port) {
     } catch { return $false }
 }
 
+# 端口在听不代表是我们家的桥——再 curl /health 核对 plugin 身份字段，
+# 防止其它进程（如别的项目的 agent）占着端口被误当桥复用。
+function Test-BridgeHealth([int]$Port, [string]$Plugin) {
+    try {
+        $health = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/health" -TimeoutSec 2
+        return [bool]($health.plugin -eq $Plugin)
+    } catch { return $false }
+}
+
 Write-Host "============ Infinite Canvas - Startup ============" -ForegroundColor Cyan
 
 # --- node check ---
@@ -45,7 +54,11 @@ Write-Host "Starting services..." -ForegroundColor Cyan
 # --- 1. Dev bridge (port 17381; Desktop plugin bridge keeps 17371) ---
 # Dev and plugin bridges use separate ports since 2026-10-31, so they never clash.
 if (Test-PortListening 17381) {
-    Write-Host "  dev bridge 17381 already listening - reusing it" -ForegroundColor Green
+    if (Test-BridgeHealth 17381 "infinite-canvas") {
+        Write-Host "  dev bridge 17381 already listening - reusing it" -ForegroundColor Green
+    } else {
+        Write-Host "[WARN] port 17381 is occupied by another service (not the infinite-canvas dev bridge) - skipping dev bridge" -ForegroundColor Yellow
+    }
 } elseif (-not (Test-Path "$agentDir/agent-instructions.md")) {
     Write-Host "[WARN] canvas-agent/agent-instructions.md missing - skipping dev bridge" -ForegroundColor Yellow
 } else {
@@ -60,7 +73,11 @@ if ($NoDirector) {
     Write-Host "  3d-director-desk not found next to this repo - skipping (canvas works without it)" -ForegroundColor Gray
 } else {
     if (Test-PortListening 17383) {
-        Write-Host "  director-mcp 17383 already listening - reusing it" -ForegroundColor Green
+        if (Test-BridgeHealth 17383 "director-desk") {
+            Write-Host "  director-mcp 17383 already listening - reusing it" -ForegroundColor Green
+        } else {
+            Write-Host "[WARN] port 17383 is occupied by another service (not director-mcp) - skipping director bridge" -ForegroundColor Yellow
+        }
     } else {
         Start-Process cmd -ArgumentList '/k', 'title director-mcp 17383 && set STORE_PORT=17383&& node index.js' -WorkingDirectory (Join-Path $directorRoot "director-mcp")
         Write-Host "  director-mcp started on 17383" -ForegroundColor Green

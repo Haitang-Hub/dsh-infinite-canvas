@@ -14,6 +14,23 @@ const localChangelog = readFileSync(resolve(webDir, "../CHANGELOG.md"), "utf8");
 // （5070 留给桌面端/其它用途，不再做双端口回退探测）.
 const DEV_PORT = 5075;
 
+// Dev-态同源化：把桥的 API 前缀代理到开发桥（17381，与 Desktop 插件桥 17371 错开），
+// 让 5075 页面与插件托管形态一样同源连桥，token 发现不再有跨域差异。
+// /canvas 只精确代理桥的三个端点，其余 /canvas/* 留给 SPA 路由（/canvas/:id 工程直链）。
+const DEV_BRIDGE_TARGET = process.env.DEV_BRIDGE_ORIGIN?.trim() || "http://127.0.0.1:17381";
+const DEV_BRIDGE_PROXY = {
+    "/bootstrap": DEV_BRIDGE_TARGET,
+    "/config": DEV_BRIDGE_TARGET,
+    "/health": DEV_BRIDGE_TARGET,
+    "/events": DEV_BRIDGE_TARGET,
+    "/mcp": DEV_BRIDGE_TARGET,
+    "/agent": DEV_BRIDGE_TARGET,
+    "/api/tools": DEV_BRIDGE_TARGET,
+    "/canvas/state": DEV_BRIDGE_TARGET,
+    "/canvas/activate": DEV_BRIDGE_TARGET,
+    "/canvas/result": DEV_BRIDGE_TARGET,
+};
+
 // Expose /plugins/index.json with local plugin files from public/plugins.
 // The frontend can discover and list them when enabled; development reads the directory live, while builds emit a static registry.
 function localPluginsManifest(): Plugin {
@@ -55,6 +72,6 @@ export default defineConfig(() => {
             __APP_VERSION__: JSON.stringify(localVersion),
             __APP_RELEASES__: JSON.stringify(parseChangelog(localChangelog)),
         },
-        server: { port: DEV_PORT },
+        server: { port: DEV_PORT, proxy: DEV_BRIDGE_PROXY },
     };
 });

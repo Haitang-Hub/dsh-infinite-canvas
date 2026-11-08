@@ -21,16 +21,16 @@ export function readStoredBridgeConfig(): BridgeConfig {
 }
 
 /**
- * 默认桥地址：插件托管形态下页面由桥本身伺服（同源），直接用当前 origin；
- * 独立开发态（vite 固定 5075）回退到固定回环端口。
+ * 默认桥地址：页面由 http(s) 回环承载时一律同源——插件托管形态由桥伺服页面直连，
+ * 独立开发态（vite 5075）经 server.proxy 转发到开发桥，两条路同源无跨域差异；
+ * 非 http 承载（如 file:// 预览）才回退到固定回环端口。
  */
 export function defaultBridgeUrl(): string {
     try {
         const { protocol, hostname } = window.location;
         if (protocol === "http:" || protocol === "https:") {
             if (hostname === "127.0.0.1" || hostname === "localhost" || hostname === "[::1]") {
-                const port = window.location.port;
-                if (port && port !== "5075") return window.location.origin;
+                return window.location.origin;
             }
         }
     } catch {
@@ -44,8 +44,13 @@ export function fetchBridgeBootstrap(baseUrl: string): Promise<BridgeConfig | nu
     return fetch(`${baseUrl.replace(/\/$/, "")}/bootstrap`)
         .then(async (res) => {
             if (!res.ok) return null;
-            const data = (await res.json().catch(() => null)) as { ok?: boolean; url?: string; token?: string } | null;
+            const data = (await res.json().catch(() => null)) as
+                | { ok?: boolean; url?: string; token?: string; plugin?: string }
+                | null;
+            // 身份校验：响应自带 plugin 字段时必须是自己家的桥（缺字段视为旧版桥放行），
+            // 防止本机其它服务恰好占着端口时误领别人的 token。
             if (!data?.ok || !data.token) return null;
+            if (data.plugin && data.plugin !== "infinite-canvas") return null;
             const config: BridgeConfig = { url: (data.url || baseUrl).replace(/\/$/, ""), token: data.token };
             persistBridgeConfig(config);
             return config;

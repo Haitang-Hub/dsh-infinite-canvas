@@ -58,7 +58,8 @@ export function startHttpServer() {
     });
     app.get("/config", (_req, res) => res.json({ ok: true, protocolVersion: AGENT_PROTOCOL_VERSION, url: config.url, hasToken: true }));
     // 零配置发现：本机回环端点向同源页面下发连接配置（web 端 bridge-config.ts 消费）。
-    app.get("/bootstrap", (_req, res) => res.json({ ok: true, url: config.url, token: config.token }));
+    // plugin/version 与 /health 同款：web 端据此校验"端口上是不是自己家的桥"。
+    app.get("/bootstrap", (_req, res) => res.json({ ok: true, plugin: "infinite-canvas", version: VERSION, url: config.url, token: config.token }));
     // Harness 直连的 streamable-http MCP 门面：与 /health 一样位于 token 中间件之前，回环之外不可达。
     registerMcpHttpEndpoint(app, (name, input) => session.callTool(name, input));
     // 插件托管形态：CANVAS_SITE_DIR 指向 web/dist，由桥直接伺服画布站点（与 director-desk
