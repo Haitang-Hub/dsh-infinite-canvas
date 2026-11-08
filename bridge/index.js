@@ -69812,7 +69812,7 @@ function startHttpServer() {
     next();
   });
   app.get("/config", (_req, res) => res.json({ ok: true, protocolVersion: AGENT_PROTOCOL_VERSION, url: config2.url, hasToken: true }));
-  app.get("/bootstrap", (_req, res) => res.json({ ok: true, url: config2.url, token: config2.token }));
+  app.get("/bootstrap", (_req, res) => res.json({ ok: true, plugin: "infinite-canvas", version: VERSION, url: config2.url, token: config2.token }));
   registerMcpHttpEndpoint(app, (name, input) => session.callTool(name, input));
   const siteDir = process.env.CANVAS_SITE_DIR?.trim();
   if (siteDir) {
