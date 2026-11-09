@@ -125,7 +125,8 @@ jobs:
         with:
           tag_name: v${{ steps.version.outputs.version }}
           generate_release_notes: true
-          files: dsh-plugin/dsh-infinite-canvas-*.tgz
+          # scoped 包名 npm pack 会产出 haitang-hub-<name>-<version>.tgz，别再按裸包名写死前缀
+          files: dsh-plugin/*.tgz
           fail_on_unmatched_files: true
 
       # Skipped unless the NPM_TOKEN secret is configured. npm-based plugin

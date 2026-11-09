@@ -1,6 +1,6 @@
 {
   "name": "@haitang-hub/dsh-infinite-canvas",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "description": "无限画布右侧栏插件：画布与对话并排，Agent 经 canvas_* 工具实时操作画布节点、生成与导出。",
   "icon": "./icon.png",
   "type": "module",
