@@ -1,6 +1,6 @@
 {
-  "name": "dsh-infinite-canvas",
-  "version": "0.2.13",
+  "name": "@haitang-hub/dsh-infinite-canvas",
+  "version": "0.2.16",
   "description": "无限画布右侧栏插件：画布与对话并排，Agent 经 canvas_* 工具实时操作画布节点、生成与导出。",
   "icon": "./icon.png",
   "type": "module",
@@ -26,10 +26,15 @@
     "pack:all": "npm run sync && npm pack"
   },
   "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
   "author": "Haitang-Hub",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Haitang-Hub/dsh-infinite-canvas.git"
+    "url": "git+https://github.com/Haitang-Hub/dsh-infinite-canvas.git",
+    "directory": "dsh-plugin"
   },
   "keywords": [
     "dsh-plugin",
@@ -53,6 +58,9 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
-    "@deepseek-ai/dsh-client-connection": "^0.1.2-rc.1 || ^0.1.7-rc.1 || ^0.1.7-rc.2 || ^0.2.0-rc.1 || ^0.2.1-rc.1"
+    "@deepseek-ai/dsh-client-connection": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-mcp-client": "^0.2.0-rc.1",
+    "react": "^18.2.0"
   }
 }
