@@ -1,19 +1,16 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { Download, FolderOpen, Menu, PanelLeftClose, PanelLeftOpen, Plus, Redo2, Trash2, Undo2, Upload } from "lucide-react";
+import { Download, FolderOpen, Menu, PanelLeftOpen, Plus, Redo2, Trash2, Undo2, Upload } from "lucide-react";
 import { Button, Dropdown, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { formatProjectNo } from "@/stores/canvas/use-canvas-store";
 import { useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useAgentStore } from "@/stores/use-agent-store";
-import { useAgentPanelInset } from "@/hooks/use-agent-panel-inset";
 
 export function CanvasTopBar({
     title,
-    projectNo,
     titleDraft,
     isTitleEditing,
     onTitleDraftChange,
@@ -33,7 +30,6 @@ export function CanvasTopBar({
     onRedo,
 }: {
     title: string;
-    projectNo?: number;
     titleDraft: string;
     isTitleEditing: boolean;
     onTitleDraftChange: (value: string) => void;
@@ -59,14 +55,6 @@ export function CanvasTopBar({
     const [shortcutsOpen, setShortcutsOpen] = useState(false);
     const sidePanelOpen = useCanvasSidePanelStore((state) => state.panelOpen);
     const toggleSidePanel = useCanvasSidePanelStore((state) => state.togglePanel);
-    const panelInset = useAgentPanelInset();
-    const insetWidth = panelInset.side ? Math.min(panelInset.width, window.innerWidth) : 0;
-    // 面板几乎占满视口时顶栏无处安放：整条隐藏（面板自带关闭按钮，不失去出口）
-    const topBarHidden = panelInset.side !== null && window.innerWidth - insetWidth < 320;
-    const insetStyle: CSSProperties = {
-        left: panelInset.side === "left" ? `min(${panelInset.width}px, 100vw)` : 0,
-        right: panelInset.side === "right" ? `min(${panelInset.width}px, 100vw)` : 0,
-    };
 
     useEffect(() => {
         if (!isTitleEditing) return;
@@ -79,20 +67,21 @@ export function CanvasTopBar({
 
     return (
         <>
-            {topBarHidden ? null : (
-                <div className="pointer-events-none absolute top-0 z-50 flex h-16 items-center justify-between pl-1 pr-4" style={insetStyle}>
+            <div className="pointer-events-none absolute left-0 right-0 top-0 z-50 flex h-16 items-center justify-between pl-1 pr-4">
                 <div className="pointer-events-auto flex min-w-0 items-center gap-2">
-                    <Tooltip title={sidePanelOpen ? t("canvas.collapsePanel") : t("canvas.expandPanel")}>
-                        <button
-                            type="button"
-                            onClick={toggleSidePanel}
-                            aria-label={sidePanelOpen ? t("canvas.collapsePanel") : t("canvas.expandPanel")}
-                            className="grid size-7 place-items-center rounded-full transition hover:bg-black/5 dark:hover:bg-white/10"
-                            style={{ color: theme.node.text }}
-                        >
-                            {sidePanelOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
-                        </button>
-                    </Tooltip>
+                    {sidePanelOpen ? null : (
+                        <Tooltip title={t("canvas.expandPanel")}>
+                            <button
+                                type="button"
+                                onClick={toggleSidePanel}
+                                aria-label={t("canvas.expandPanel")}
+                                className="grid size-7 place-items-center rounded-full transition hover:bg-black/5 dark:hover:bg-white/10"
+                                style={{ color: theme.node.text }}
+                            >
+                                <PanelLeftOpen className="size-4" />
+                            </button>
+                        </Tooltip>
+                    )}
                     <Dropdown
                         trigger={["click"]}
                         menu={{
@@ -137,7 +126,6 @@ export function CanvasTopBar({
                                 onDoubleClick={onStartTitleEditing}
                                 title={t("canvas.renameHint")}
                             >
-                                <span className="shrink-0 font-mono text-xs font-normal opacity-45">{formatProjectNo(projectNo)}</span>
                                 <span className="truncate">{title}</span>
                             </button>
                         )}
@@ -148,10 +136,9 @@ export function CanvasTopBar({
                 <div className="pointer-events-auto flex items-center gap-1.5">
                     <UserStatusActions variant="canvas" onOpenShortcuts={() => setShortcutsOpen(true)} onOpenPlugins={onOpenPlugins} />
                 </div>
-                </div>
-            )}
+            </div>
             <Modal title={t("canvas.shortcuts")} open={shortcutsOpen} onCancel={() => setShortcutsOpen(false)} footer={null} centered>
-                <div className="space-y-2 border-t pt-4 text-sm" style={{ borderColor: theme.node.stroke }}>
+                <div className="space-y-0.5 border-t pt-3 text-sm" style={{ borderColor: theme.node.stroke }}>
                     <Shortcut keys={["Ctrl / Space", t("canvas.shortcut.drag")]} value={t("canvas.shortcut.toggleTool")} />
                     <Shortcut keys={[t("canvas.shortcut.wheel")]} value={t("canvas.shortcut.zoom")} />
                     <Shortcut keys={[t("canvas.shortcut.zoomSlider")]} value={t("canvas.shortcut.preciseZoom")} />
@@ -201,22 +188,30 @@ function CompactBridgeStatus() {
 }
 
 function Shortcut({ keys, value }: { keys: string[]; value: string }) {
+    // 键帽随画布主题取色：浅色用暖灰白底、深色用比画布略亮的中性灰底（避免纯白块刺眼），
+    // 描边与文字都用主题 node 色，保证明暗两套下对比度与画布整体一致。
+    const colorTheme = useThemeStore((state) => state.theme);
+    const theme = canvasThemes[colorTheme];
+    const isDark = colorTheme === "dark";
+    const capStyle: CSSProperties = {
+        borderColor: theme.node.stroke,
+        background: isDark ? "#383431" : "linear-gradient(#fafaf9, rgba(231,229,223,.9))",
+        color: theme.node.text,
+        boxShadow: isDark ? "inset 0 -1px 0 rgba(0,0,0,.4), 0 1px 1px rgba(0,0,0,.3)" : "inset 0 -1px 0 rgba(0,0,0,.06), 0 1px 1px rgba(0,0,0,.05)",
+    };
     return (
-        <div className="grid grid-cols-[minmax(0,1fr)_120px] items-center gap-6 rounded-lg px-1 py-1.5">
-            <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <div className="grid grid-cols-[minmax(0,1fr)_120px] items-center gap-4 rounded-md px-1 py-1">
+            <span className="flex min-w-0 flex-wrap items-center gap-1">
                 {keys.map((key, index) => (
-                    <span key={`${key}-${index}`} className="flex items-center gap-1.5">
-                        {index ? <span className="text-xs opacity-35">+</span> : null}
-                        <kbd
-                            className="min-w-9 rounded-md border px-2.5 py-1.5 text-center text-xs font-medium leading-none shadow-[inset_0_-1px_0_rgba(0,0,0,.08),0_1px_2px_rgba(0,0,0,.06)]"
-                            style={{ borderColor: "rgba(120,113,108,.28)", background: "linear-gradient(#fff, rgba(245,245,244,.92))", color: "rgb(68,64,60)" }}
-                        >
+                    <span key={`${key}-${index}`} className="flex items-center gap-1">
+                        {index ? <span className="text-[11px] opacity-30">+</span> : null}
+                        <kbd className="min-w-7 rounded border px-1.5 py-0.5 text-center text-[11px] font-medium leading-none" style={capStyle}>
                             {key}
                         </kbd>
                     </span>
                 ))}
             </span>
-            <span className="text-right text-sm opacity-55">{value}</span>
+            <span className="text-right text-xs opacity-50">{value}</span>
         </div>
     );
 }

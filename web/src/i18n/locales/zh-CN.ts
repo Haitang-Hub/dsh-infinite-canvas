@@ -224,7 +224,7 @@ export default {
         deleteSelected: "删除选中",
         import: "导入画布",
         create: "新建画布",
-        collapsePanel: "收起面板",
+        closePanel: "关闭面板",
         expandPanel: "展开面板",
         directory: {
             title: "工程目录",

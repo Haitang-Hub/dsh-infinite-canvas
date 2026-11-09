@@ -39,7 +39,7 @@ export type AgentConversationState = {
     error?: string;
 };
 export type AgentPanelTab = "chat" | "setup" | "history" | "skills" | "log";
-export type AgentPanelLayout = { mode: "left" | "right" | "float"; x: number; y: number; width?: number; height?: number };
+export type AgentPanelLayout = { x: number; y: number; width?: number; height?: number };
 
 const PANEL_LAYOUT_KEY = "canvas-agent-panel-layout-v1";
 const GLASS_OPACITY_KEY = "canvas-agent-glass-opacity";
@@ -50,9 +50,10 @@ function loadPanelLayout(): AgentPanelLayout | null {
     try {
         const raw = localStorage.getItem(PANEL_LAYOUT_KEY);
         if (!raw) return null;
-        const parsed = JSON.parse(raw) as Partial<AgentPanelLayout>;
-        if (parsed.mode !== "left" && parsed.mode !== "right" && parsed.mode !== "float") return null;
-        return { mode: parsed.mode, x: Number(parsed.x) || 80, y: Number(parsed.y) || 80, width: Number(parsed.width) || undefined, height: Number(parsed.height) || undefined };
+        const parsed = JSON.parse(raw) as Partial<AgentPanelLayout> & { mode?: string };
+        // 旧版左右停靠布局已不再支持，回落到浮动面板的默认位置
+        if (parsed.mode === "left" || parsed.mode === "right") return null;
+        return { x: Number(parsed.x) || 80, y: Number(parsed.y) || 80, width: Number(parsed.width) || undefined, height: Number(parsed.height) || undefined };
     } catch {
         return null;
     }

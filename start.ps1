@@ -1,10 +1,8 @@
 ﻿# Infinite Canvas - Local Startup
-param([switch]$NoDirector)
 $ErrorActionPreference = "Continue"
 $root = $PSScriptRoot
 $webDir = Join-Path $root "web"
 $agentDir = Join-Path $root "canvas-agent"
-$directorRoot = Join-Path (Split-Path $root -Parent) "3d-director-desk"
 
 function Test-PortListening([int]$Port) {
     try {
@@ -66,43 +64,7 @@ if (Test-PortListening 17381) {
     Write-Host "  dev bridge started on 17381" -ForegroundColor Green
 }
 
-# --- 2. 3D Director Desk (optional sibling project, web 5080 / dev bridge 17383) ---
-if ($NoDirector) {
-    Write-Host "  director desk skipped (-NoDirector)" -ForegroundColor Gray
-} elseif (-not (Test-Path $directorRoot)) {
-    Write-Host "  3d-director-desk not found next to this repo - skipping (canvas works without it)" -ForegroundColor Gray
-} else {
-    if (Test-PortListening 17383) {
-        if (Test-BridgeHealth 17383 "director-desk") {
-            Write-Host "  director-mcp 17383 already listening - reusing it" -ForegroundColor Green
-        } else {
-            Write-Host "[WARN] port 17383 is occupied by another service (not director-mcp) - skipping director bridge" -ForegroundColor Yellow
-        }
-    } else {
-        Start-Process cmd -ArgumentList '/k', 'title director-mcp 17383 && set STORE_PORT=17383&& node index.js' -WorkingDirectory (Join-Path $directorRoot "director-mcp")
-        Write-Host "  director-mcp started on 17383" -ForegroundColor Green
-    }
-    if (Test-PortListening 5080) {
-        Write-Host "  director web 5080 already listening - reusing it" -ForegroundColor Green
-    } elseif (-not (Test-Path "$directorRoot/web/node_modules")) {
-        Write-Host "[..] Installing director-desk web dependencies, first run only..." -ForegroundColor Cyan
-        Push-Location "$directorRoot/web"
-        npm install --legacy-peer-deps
-        $failed = ($LASTEXITCODE -ne 0)
-        Pop-Location
-        if ($failed) {
-            Write-Host "[WARN] director-desk web npm install failed - canvas still works, 3D desk unavailable" -ForegroundColor Yellow
-        } else {
-            Start-Process cmd -ArgumentList '/k', 'title Director Web 5080 && npm run dev' -WorkingDirectory "$directorRoot/web"
-            Write-Host "  director web started" -ForegroundColor Green
-        }
-    } else {
-        Start-Process cmd -ArgumentList '/k', 'title Director Web 5080 && npm run dev' -WorkingDirectory "$directorRoot/web"
-        Write-Host "  director web started" -ForegroundColor Green
-    }
-}
-
-# --- 3. Web dev server (fixed port 5075) ---
+# --- 2. Web dev server (fixed port 5075) ---
 if (Test-PortListening 5075) {
     Write-Host "  Web 5075 already listening - opening browser only" -ForegroundColor Green
     Start-Process "http://localhost:5075"

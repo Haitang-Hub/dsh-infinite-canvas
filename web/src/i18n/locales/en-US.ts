@@ -224,7 +224,7 @@ export default {
         deleteSelected: "Delete selected",
         import: "Import canvas",
         create: "New canvas",
-        collapsePanel: "Collapse panel",
+        closePanel: "Close panel",
         expandPanel: "Expand panel",
         directory: {
             title: "Project directory",
