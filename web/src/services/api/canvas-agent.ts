@@ -37,7 +37,8 @@ export type AgentSkillDetail = {
 };
 export type AgentSkillInput = { name?: string; description: string; instructions: string; interface?: AgentSkillInterface | null; expectedRevision?: string; scope?: AgentSkillScope };
 export type AgentSkillDraft = { name: string; displayName: string; description: string; instructions: string; shortDescription: string; defaultPrompt: string };
-export type AgentSkillDraftInput = { source: "conversation" | "canvas"; threadId: string; clientId: string; channel: { baseUrl: string; apiKey: string; model: string } };
+export type AgentChannelConfig = { baseUrl: string; apiKey: string; model: string } | { harness: { relay: string; provider: string; model: string } };
+export type AgentSkillDraftInput = { source: "conversation" | "canvas"; threadId: string; clientId: string; channel: AgentChannelConfig };
 export type AgentSkillsResponse = { ok?: boolean; data?: AgentSkillSummary[]; errors?: unknown[] };
 export type AgentSkillResponse = { ok?: boolean; data?: AgentSkillDetail };
 export type AgentSkillDraftResponse = { ok?: boolean; data?: AgentSkillDraft };

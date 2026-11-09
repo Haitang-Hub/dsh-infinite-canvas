@@ -2,7 +2,9 @@ import type { AgentAttachment, AgentEmit } from "./types.js";
 import { channelToolDefinitions, skillsSystemSection, CHANNEL_SYSTEM_PROMPT, SKILL_READ_TOOL } from "./channel-tools.js";
 import { loadOrCreateChannelThread, saveChannelThread, type ChannelLlmMessage, type ChannelThread } from "./channel-threads.js";
 
-export type ChannelModelConfig = { baseUrl: string; apiKey: string; model: string };
+export type ChannelModelConfig =
+    | { transport: "channel"; baseUrl: string; apiKey: string; model: string }
+    | { transport: "harness"; relay: string; provider: string; model: string };
 
 const MAX_TOOL_ROUNDS = 10;
 const TOOL_RESULT_MAX_CHARS = 8000;
@@ -12,6 +14,12 @@ const REQUEST_TIMEOUT_MS = 300000;
 type ChatCompletionResponse = {
     choices?: Array<{ message?: { content?: string | null; tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }> } }>;
     usage?: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } };
+};
+
+type ChannelChatResult = {
+    content: string;
+    toolCalls: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }>;
+    usage?: ChatCompletionResponse["usage"];
 };
 
 let lastModel: ChannelModelConfig | null = null;
@@ -37,14 +45,73 @@ function chatCompletionsUrl(baseUrl: string) {
     return trimmed.endsWith("/v1") ? `${trimmed}/chat/completions` : `${trimmed}/v1/chat/completions`;
 }
 
-/** 校验并规范浏览器提交的渠道配置。 */
+/** 校验并规范浏览器提交的渠道配置；harness 形态走 DSH 插件代理端点（密钥不出 harness 进程）。 */
 export function channelModelConfig(value: unknown): ChannelModelConfig {
     const source = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+    const harness = source.harness && typeof source.harness === "object" && !Array.isArray(source.harness) ? source.harness as Record<string, unknown> : null;
+    if (harness) {
+        const relay = String(harness.relay || "").trim().replace(/\/$/, "");
+        const provider = String(harness.provider || "").trim();
+        const model = String(harness.model || "").trim();
+        if (!relay || !provider || !model) throw new Error("Harness 模型配置不完整：请在网页模型选择里重新选择 Harness 模型");
+        return { transport: "harness", relay, provider, model };
+    }
     const baseUrl = String(source.baseUrl || "").trim().replace(/\/$/, "");
     const apiKey = String(source.apiKey || "").trim();
     const model = String(source.model || "").trim();
     if (!baseUrl || !apiKey || !model) throw new Error("模型渠道配置不完整：请在网页「模型配置」中选择带 API Key 的文本渠道");
-    return { baseUrl, apiKey, model };
+    return { transport: "channel", baseUrl, apiKey, model };
+}
+
+/**
+ * 统一的模型调用出口：channel 直连 OpenAI 兼容端点；harness 经 DSH 插件 /api/*.harness-chat
+ * 代理（OpenAI 形态入参，返回统一为文本 + 工具调用）。
+ */
+async function callChannelModel(channel: ChannelModelConfig, body: Record<string, unknown>, signal: AbortSignal): Promise<ChannelChatResult> {
+    if (channel.transport === "harness") {
+        const response = await fetch(channel.relay, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ provider: channel.provider, model: channel.model, ...body }),
+            signal,
+        });
+        const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+        if (!response.ok || payload?.ok !== true) {
+            throw new Error(typeof payload?.error === "string" && payload.error ? payload.error : `Harness 模型请求失败（HTTP ${response.status}）`);
+        }
+        const toolCalls = (Array.isArray(payload.toolCalls) ? payload.toolCalls : [])
+            .map((call) => call && typeof call === "object" ? call as Record<string, unknown> : {})
+            .filter((call) => typeof call.name === "string" && call.name)
+            .map((call) => ({ id: String(call.id || ""), type: "function" as const, function: { name: String(call.name), arguments: String(call.arguments || "{}") } }));
+        const usage = payload.usage && typeof payload.usage === "object" ? payload.usage as Record<string, unknown> : null;
+        return {
+            content: typeof payload.content === "string" ? payload.content : "",
+            toolCalls,
+            usage: usage ? {
+                prompt_tokens: Number(usage.inputTokens || 0) + Number(usage.cachedInputTokens || 0),
+                completion_tokens: Number(usage.outputTokens || 0),
+                prompt_tokens_details: { cached_tokens: Number(usage.cachedInputTokens || 0) },
+            } : undefined,
+        };
+    }
+    const response = await fetch(chatCompletionsUrl(channel.baseUrl), {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${channel.apiKey}` },
+        body: JSON.stringify({ model: channel.model, ...body }),
+        signal,
+    });
+    if (!response.ok) {
+        const text = await response.text().catch(() => "");
+        throw new Error(`模型请求失败（HTTP ${response.status}）${text ? `：${text.slice(0, 300)}` : ""}`);
+    }
+    const data = (await response.json()) as ChatCompletionResponse;
+    const message = data.choices?.[0]?.message;
+    const toolCalls = (message?.tool_calls || []).map((call, index) => ({
+        id: String(call.id || `call-${index}`),
+        type: "function" as const,
+        function: { name: String(call.function?.name || ""), arguments: String(call.function?.arguments || "{}") },
+    })).filter((call) => call.function.name);
+    return { content: String(message?.content || ""), toolCalls, usage: data.usage };
 }
 
 type RunChannelTurnOptions = {
@@ -102,17 +169,7 @@ export async function runChannelTurn(options: RunChannelTurnOptions): Promise<vo
         if (options.skills?.length && !tools.some((tool) => tool.function.name === SKILL_READ_TOOL.function.name)) tools.push(SKILL_READ_TOOL);
 
         for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-            const response = await fetch(chatCompletionsUrl(channel.baseUrl), {
-                method: "POST",
-                headers: { "content-type": "application/json", authorization: `Bearer ${channel.apiKey}` },
-                body: JSON.stringify({ model: channel.model, messages, tools, tool_choice: "auto" }),
-                signal: controller.signal,
-            });
-            if (!response.ok) {
-                const body = await response.text().catch(() => "");
-                throw new Error(`模型请求失败（HTTP ${response.status}）${body ? `：${body.slice(0, 300)}` : ""}`);
-            }
-            const data = (await response.json()) as ChatCompletionResponse;
+            const data = await callChannelModel(channel, { messages, tools, tool_choice: "auto" }, controller.signal);
             if (data.usage) {
                 emit("agent_event", {
                     type: "usage.updated",
@@ -123,19 +180,15 @@ export async function runChannelTurn(options: RunChannelTurnOptions): Promise<vo
                     },
                 });
             }
-            const choice = data.choices?.[0]?.message;
-            const toolCalls = (choice?.tool_calls || []).map((call, index) => ({
-                id: String(call.id || `call-${round}-${index}`),
-                type: "function" as const,
-                function: { name: String(call.function?.name || ""), arguments: String(call.function?.arguments || "{}") },
-            })).filter((call) => call.function.name);
+            const text = data.content;
+            const toolCalls = data.toolCalls;
 
             if (toolCalls.length) {
-                const assistant: ChannelLlmMessage = { role: "assistant", content: choice?.content || null, tool_calls: toolCalls };
+                const assistant: ChannelLlmMessage = { role: "assistant", content: text || null, tool_calls: toolCalls };
                 thread.llmMessages.push(assistant);
                 messages.push(assistant);
-                if (choice?.content?.trim()) {
-                    emit("agent_event", { type: "item.completed", item: { id: `${turnId}:msg-${round}`, type: "agent_message", text: choice.content } });
+                if (text.trim()) {
+                    emit("agent_event", { type: "item.completed", item: { id: `${turnId}:msg-${round}`, type: "agent_message", text } });
                 }
                 for (const call of toolCalls) {
                     let input: unknown = {};
@@ -178,7 +231,6 @@ export async function runChannelTurn(options: RunChannelTurnOptions): Promise<vo
                 continue;
             }
 
-            const text = String(choice?.content || "");
             thread.llmMessages.push({ role: "assistant", content: text });
             thread.items.push({ id: `${turnId}:final`, itemId: `${turnId}:final`, role: "assistant", text, turnId });
             emit("agent_event", { type: "item.completed", item: { id: `${turnId}:final`, type: "agent_message", text } });
@@ -216,30 +268,19 @@ const SKILL_DRAFT_SYSTEM_PROMPT = [
     `- defaultPrompt：调用该 Skill 的默认提示词模板，必须包含 {{skill}} 占位符指向本 Skill`,
 ].join("\n");
 
-/** 调用渠道模型一次性提炼 Skill 草稿；模型返回 JSON 解析失败时抛错。 */
+/** 调用模型一次性提炼 Skill 草稿；模型返回 JSON 解析失败时抛错。 */
 export async function draftSkillWithChannel(channel: ChannelModelConfig, context: { source: "conversation" | "canvas"; canvasContext?: string; conversationText?: string }): Promise<SkillDraft> {
     const sourceText = context.source === "canvas"
         ? `以下是当前画布的状态快照（JSON），请提炼其中体现的可复用流程：\n${context.canvasContext || "（空）"}`
         : `以下是对话记录，请提炼其中可复用、值得固化为 Skill 的流程（如果没有可提炼内容，请让 name 为空）：\n${context.conversationText || "（空）"}`;
-    const response = await fetch(chatCompletionsUrl(channel.baseUrl), {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${channel.apiKey}` },
-        body: JSON.stringify({
-            model: channel.model,
-            messages: [
-                { role: "system", content: SKILL_DRAFT_SYSTEM_PROMPT },
-                { role: "user", content: sourceText },
-            ],
-            temperature: 0.2,
-        }),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-    if (!response.ok) {
-        const body = await response.text().catch(() => "");
-        throw new Error(`提炼 Skill 失败（HTTP ${response.status}）${body ? `：${body.slice(0, 300)}` : ""}`);
-    }
-    const data = (await response.json()) as ChatCompletionResponse;
-    const text = String(data.choices?.[0]?.message?.content || "");
+    const data = await callChannelModel(channel, {
+        messages: [
+            { role: "system", content: SKILL_DRAFT_SYSTEM_PROMPT },
+            { role: "user", content: sourceText },
+        ],
+        temperature: 0.2,
+    }, AbortSignal.timeout(REQUEST_TIMEOUT_MS));
+    const text = data.content;
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("模型未返回有效的 Skill 草稿");
     const parsed = JSON.parse(jsonMatch[0]) as SkillDraft;

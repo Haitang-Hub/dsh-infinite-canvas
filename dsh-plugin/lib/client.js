@@ -24,7 +24,7 @@ window.__ModuleLoader__.load({
   id: '@haitang-hub/dsh-infinite-canvas',
   factory: (require) => {
     const React = require('react')
-    const { useEffect, useState } = React
+    const { useEffect, useRef, useState } = React
     const h = React.createElement
 
     const TAB_ID = 'dsh-infinite-canvas'
@@ -139,9 +139,51 @@ window.__ModuleLoader__.load({
     /** 右侧栏标签正文：工具栏 + 无限画布。 */
     function InfiniteCanvasTab() {
       const info = useBridgeInfo()
+      const iframeRef = useRef(null)
       const [nonce, setNonce] = useState(0)
       const [busy, setBusy] = useState(false)
       const [actionError, setActionError] = useState('')
+
+      // Harness 模型代理：iframe 里的 Agent 面板经 postMessage 请求宿主模型目录/代发对话，
+      // 这里转成同源 /api/infinite-canvas.harness-* 请求（密钥只在宿主进程内）。
+      // 只认本标签 iframe 发来的消息（event.source 校验），响应按消息来源 origin 回发。
+      useEffect(() => {
+        const API = '/api/infinite-canvas'
+        const onMessage = (event) => {
+          const iframe = iframeRef.current
+          if (!iframe || event.source !== iframe.contentWindow) return
+          const data = event.data
+          if (!data || typeof data !== 'object' || data.type !== 'dsh-harness:request') return
+          const requestId = String(data.requestId || '')
+          const reply = (payload) => {
+            try {
+              // sourceOrigin：iframe 里的页面据此拼出 canvas-agent 可直连的 harness 端点绝对地址
+              iframe.contentWindow?.postMessage({ type: 'dsh-harness:response', requestId, sourceOrigin: window.location.origin, ...payload }, event.origin || '*')
+            } catch { /* iframe 已卸载 */ }
+          }
+          if (data.action === 'models') {
+            fetch(`${API}.harness-models`)
+              .then((response) => response.json())
+              .then((body) => reply(body && typeof body === 'object' ? body : { ok: false, error: 'invalid response' }))
+              .catch((error) => reply({ ok: false, error: String(error?.message ?? error) }))
+            return
+          }
+          if (data.action === 'chat') {
+            fetch(`${API}.harness-chat`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(data.payload && typeof data.payload === 'object' ? data.payload : {}),
+            })
+              .then((response) => response.json())
+              .then((body) => reply(body && typeof body === 'object' ? body : { ok: false, error: 'invalid response' }))
+              .catch((error) => reply({ ok: false, error: String(error?.message ?? error) }))
+            return
+          }
+          reply({ ok: false, error: `unknown action: ${String(data.action)}` })
+        }
+        window.addEventListener('message', onMessage)
+        return () => window.removeEventListener('message', onMessage)
+      }, [])
 
       // 手动重建桥：宿主端 POST 会杀子进程并重新拉起，随后状态由 5s 轮询刷新。
       const restartBridge = () => {
@@ -190,6 +232,7 @@ window.__ModuleLoader__.load({
         info?.ready
           ? h('iframe', {
             key: nonce,
+            ref: iframeRef,
             src: `${bridgeOrigin(info)}/`,
             title: '无限画布',
             style: IFRAME_STYLE,

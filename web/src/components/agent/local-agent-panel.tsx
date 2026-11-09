@@ -19,6 +19,7 @@ import { uploadImage } from "@/services/image-storage";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useAgentSkillStore } from "@/stores/use-agent-skill-store";
 import { resolveModelRequestConfig, useConfigStore } from "@/stores/use-config-store";
+import { buildHarnessChannel, decodeHarnessSelection, encodeHarnessSelection, listHarnessModels } from "@/lib/harness-bridge";
 import { useShallow } from "zustand/react/shallow";
 import { useAgentStore, type AgentAttachment, type AgentBootstrapStatus, type AgentCanvasContext, type AgentCanvasReference, type AgentChatItem, type AgentConversationState, type AgentModel, type AgentPanelTab, type AgentPendingApproval, type AgentPendingToolCall, type AgentPermissionMode, type AgentReasoningEffort, type AgentThreadSummary } from "@/stores/use-agent-store";
 import { type CanvasAgentOp, type CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
@@ -614,15 +615,47 @@ export function LocalAgentPanel({ embedded, headless }: { embedded?: boolean; he
         if (connected) void loadSkills(endpoint, token);
     }, [connected, endpoint, loadSkills, token]);
 
-    // 渠道模型引擎：模型列表直接来自「模型配置」的 text 渠道，连接后本地推导
+    // 模型引擎：text 渠道为 harness 选择时，经 iframe 桥拉取 DSH 模型列表；否则沿用渠道模型
     useEffect(() => {
         if (!connected) return;
-        const configState = useConfigStore.getState().config;
-        const resolved = resolveModelRequestConfig(configState, configState.textModel);
-        if (!resolved.model) return;
-        const models = [{ id: resolved.model, model: resolved.model, displayName: resolved.model, defaultReasoningEffort: "medium", supportedReasoningEfforts: [], isDefault: true } as AgentModel];
-        localStorage.setItem("canvas-agent-model", resolved.model);
-        setAgentState({ models, model: resolved.model, reasoningEffort: "" });
+        let disposed = false;
+        let lastTextModel = useConfigStore.getState().config.textModel;
+        const applyModels = async () => {
+            const configState = useConfigStore.getState().config;
+            const harnessRoute = decodeHarnessSelection(configState.textModel);
+            if (harnessRoute) {
+                try {
+                    const groups = await listHarnessModels();
+                    if (disposed) return;
+                    const selection = encodeHarnessSelection(harnessRoute.provider, harnessRoute.model);
+                    const models = groups.flatMap((group) => group.models.map((item) => {
+                        const id = encodeHarnessSelection(group.provider, item.id);
+                        return { id, model: id, displayName: `${item.name} (${group.providerName})`, defaultReasoningEffort: "medium", supportedReasoningEfforts: [], isDefault: id === selection } as AgentModel;
+                    }));
+                    if (!models.length) return;
+                    localStorage.setItem("canvas-agent-model", selection);
+                    setAgentState({ models, model: selection, reasoningEffort: "" });
+                } catch {
+                    // 桥未就绪时保留现有模型列表，连接后 textModel 变化会重试
+                }
+                return;
+            }
+            const resolved = resolveModelRequestConfig(configState, configState.textModel);
+            if (!resolved.model) return;
+            const models = [{ id: resolved.model, model: resolved.model, displayName: resolved.model, defaultReasoningEffort: "medium", supportedReasoningEfforts: [], isDefault: true } as AgentModel];
+            localStorage.setItem("canvas-agent-model", resolved.model);
+            setAgentState({ models, model: resolved.model, reasoningEffort: "" });
+        };
+        void applyModels();
+        const unsubscribe = useConfigStore.subscribe((state) => {
+            if (state.config.textModel === lastTextModel) return;
+            lastTextModel = state.config.textModel;
+            void applyModels();
+        });
+        return () => {
+            disposed = true;
+            unsubscribe();
+        };
     }, [connected, setAgentState]);
 
     useEffect(() => {
@@ -642,18 +675,39 @@ export function LocalAgentPanel({ embedded, headless }: { embedded?: boolean; he
         const text = prompt.trim();
         const files = attachments;
         const configState = useConfigStore.getState().config;
-        const textChannel = resolveModelRequestConfig(configState, configState.textModel);
-        if (!textChannel.baseUrl || !textChannel.apiKey || !textChannel.model) {
-            const text = i18n.t("agent.runtime.channelMissing");
-            addMessage({ role: "error", title: rt("sendFailed"), text });
-            message.error(text);
-            return;
-        }
-        if (textChannel.apiFormat !== "openai") {
-            const text = i18n.t("agent.runtime.channelProtocolUnsupported");
-            addMessage({ role: "error", title: rt("sendFailed"), text });
-            message.error(text);
-            return;
+        let channelPayload: { baseUrl: string; apiKey: string; model: string } | { harness: { relay: string; provider: string; model: string } };
+        if (decodeHarnessSelection(configState.textModel)) {
+            if (files.length || useAgentStore.getState().canvasReferences.some((item) => item.kind === "image")) {
+                const text = i18n.t("agent.runtime.channelHarnessImagesUnsupported");
+                addMessage({ role: "error", title: rt("sendFailed"), text });
+                message.error(text);
+                return;
+            }
+            try {
+                const built = await buildHarnessChannel(configState.textModel);
+                if (!built) throw new Error(i18n.t("agent.runtime.channelHarnessUnavailable"));
+                channelPayload = built;
+            } catch (error) {
+                const text = error instanceof Error ? error.message : i18n.t("agent.runtime.channelHarnessUnavailable");
+                addMessage({ role: "error", title: rt("sendFailed"), text });
+                message.error(text);
+                return;
+            }
+        } else {
+            const textChannel = resolveModelRequestConfig(configState, configState.textModel);
+            if (!textChannel.baseUrl || !textChannel.apiKey || !textChannel.model) {
+                const text = i18n.t("agent.runtime.channelMissing");
+                addMessage({ role: "error", title: rt("sendFailed"), text });
+                message.error(text);
+                return;
+            }
+            if (textChannel.apiFormat !== "openai") {
+                const text = i18n.t("agent.runtime.channelProtocolUnsupported");
+                addMessage({ role: "error", title: rt("sendFailed"), text });
+                message.error(text);
+                return;
+            }
+            channelPayload = { baseUrl: textChannel.baseUrl, apiKey: textChannel.apiKey, model: textChannel.model };
         }
         const skillState = useAgentSkillStore.getState();
         const selectedSkill = skillState.selectedSkill;
@@ -723,7 +777,7 @@ export function LocalAgentPanel({ embedded, headless }: { embedded?: boolean; he
                     threadId,
                     conversationId: currentBeforeSend.conversation.conversationId,
                     expectedRevision: currentBeforeSend.conversation.revision,
-                    channel: { baseUrl: textChannel.baseUrl, apiKey: textChannel.apiKey, model: textChannel.model },
+                    channel: channelPayload,
                     attachments: requestFiles.map(({ id, name, type, size, width, height, dataUrl }) => ({ id, name, type, size, width, height, dataUrl })),
                     messageMetadata,
                 }),
@@ -1478,6 +1532,7 @@ export function LocalAgentPanel({ embedded, headless }: { embedded?: boolean; he
                         onModelChange={(model) => {
                             const selected = models.find((item) => item.model === model);
                             if (!selected) return;
+                            if (decodeHarnessSelection(model)) useConfigStore.getState().updateConfig("textModel", model);
                             const effort = selected.defaultReasoningEffort || selected.supportedReasoningEfforts[0]?.reasoningEffort;
                             localStorage.setItem("canvas-agent-model", model);
                             if (effort) localStorage.setItem("canvas-agent-reasoning-effort", effort);

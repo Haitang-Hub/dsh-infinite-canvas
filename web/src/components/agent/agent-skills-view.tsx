@@ -9,6 +9,7 @@ import { createAgentSkill, createAgentSkillDraft, deleteAgentSkill, fetchAgentSk
 import { useAgentSkillStore } from "@/stores/use-agent-skill-store";
 import { useAgentStore, type AgentChatItem } from "@/stores/use-agent-store";
 import { resolveModelRequestConfig, useConfigStore } from "@/stores/use-config-store";
+import { buildHarnessChannel, decodeHarnessSelection } from "@/lib/harness-bridge";
 import { useThemeStore } from "@/stores/use-theme-store";
 
 type ScopeFilter = "all" | AgentSkillScope;
@@ -96,8 +97,20 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
         if (source === "canvas" && !agent.canvasContext) return message.warning(t("agent.skillManager.noCanvas"));
         if (!clientId) return message.warning(t("agent.skillManager.connecting"));
         const configState = useConfigStore.getState().config;
-        const textChannel = resolveModelRequestConfig(configState, configState.textModel);
-        if (!textChannel.baseUrl || !textChannel.apiKey || !textChannel.model) return message.warning(t("agent.skillManager.channelMissing"));
+        let channelPayload: { baseUrl: string; apiKey: string; model: string } | { harness: { relay: string; provider: string; model: string } };
+        if (decodeHarnessSelection(configState.textModel)) {
+            try {
+                const built = await buildHarnessChannel(configState.textModel);
+                if (!built) throw new Error(t("agent.skillManager.harnessUnavailable"));
+                channelPayload = built;
+            } catch {
+                return message.warning(t("agent.skillManager.harnessUnavailable"));
+            }
+        } else {
+            const textChannel = resolveModelRequestConfig(configState, configState.textModel);
+            if (!textChannel.baseUrl || !textChannel.apiKey || !textChannel.model) return message.warning(t("agent.skillManager.channelMissing"));
+            channelPayload = { baseUrl: textChannel.baseUrl, apiKey: textChannel.apiKey, model: textChannel.model };
+        }
         const connectionRevision = useAgentSkillStore.getState().connectionRevision;
         setGeneratingSource(source);
         try {
@@ -110,7 +123,7 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
                 source,
                 threadId: agent.activeThreadId,
                 clientId,
-                channel: { baseUrl: textChannel.baseUrl, apiKey: textChannel.apiKey, model: textChannel.model },
+                channel: channelPayload,
             });
             if (!connectionIsCurrent(connectionRevision)) return;
             if (!response.data) throw new Error(t("agent.skillManager.noDraft"));
