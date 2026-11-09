@@ -272,7 +272,7 @@ export default {
             node: "节点",
             untitled: "未命名节点", renameHint: "双击修改节点名称", group: "组", nodeCount: "{{count}} 个节点", generating: "生成中", failed: "生成失败", retry: "重试", missingPlugin: "缺少插件", missingPluginDescription: "节点类型“{{type}}”的插件未安装或未启用", generateImage: "用文本生图", generate: "生图", editText: "双击编辑文字", emptyImage: "空图片节点", emptyVideo: "空视频节点", emptyAudio: "空音频节点", audio: "音频", batchExpanded: "图片组已展开", batchCollapsed: "图片组已收起", textBatchExpanded: "备选文本已展开", textBatchCollapsed: "备选文本已收起", createCopy: "创建副本", setPrimary: "设为主图", setPrimaryText: "设为主文本", openDirectorDeskHint: "悬停节点打开 3D 导演台",
             shotQcLabel: "QC", shotQcPending: "待确认", shotQcPassed: "已通过", shotQcFailed: "未通过",
-            directorDeskOfflineTitle: "导演台未启动", directorDeskOffline: "未能连接到导演台服务（{{url}}）。请先在 3d-director-desk 项目中启动服务（其 web 目录运行 npm run dev），或在该项目目录下运行 start.bat。", directorDeskOpenAnyway: "仍要打开", directorDeskShellFallback: "未能以右侧栏标签打开导演台（{{reason}}），已回退独立窗口", directorDeskShellMissing: "宿主打开标签失败，可能导演台插件未装或未激活", directorDeskShellTimeout: "宿主壳未响应（壳版本过旧或界面繁忙）",
+            directorDeskOfflineTitle: "导演台未启动", directorDeskOffline: "未能连接到导演台服务（{{url}}）。请先在 3d-director-desk 项目中启动服务（其 web 目录运行 npm run dev），或在该项目目录下运行 start.bat。", directorDeskOpenAnyway: "仍要打开", directorDeskPluginMissingTitle: "3D 导演台插件未安装或未启用", directorDeskPluginMissing: "「打开导演台」需要安装并启用 3D 导演台插件（@haitang-hub/dsh-3d-director-desk）。请到插件市场安装并启用后，重新点击节点上的「打开导演台」。", directorDeskShellUnavailable: "宿主没有响应「打开导演台」请求，请确认无限画布插件已更新到最新版本后重试。",
         },
         videoFrames: { first: "截取首帧", last: "截取尾帧", current: "截取当前帧", firstTitle: "{{name}} 首帧", lastTitle: "{{name}} 尾帧", currentTitle: "{{name}} 当前帧", captured: "已生成图片节点", failed: "无法截取该画面，请重试" },
         sidePanel: {

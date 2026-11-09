@@ -24,8 +24,8 @@ export async function directorDeskReachable(timeoutMs = 3000): Promise<boolean> 
 /**
  * 插件壳（DSH Harness）内：请求宿主打开右侧栏「导演台」标签。
  * 宿主侧由 dsh-infinite-canvas 客户端监听并转发 `sidebarRight.openTab("director-desk", { params })`；
- * 返回 'ok'（壳已接单）；'missing'（壳在线但 openTab 抛错，通常=导演台插件未装/未激活）；
- * 'timeout'（壳未升级或主线程繁忙，无 ACK）。调用方对后两者回退独立窗口。
+ * 返回 'ok'（壳已接单）；'missing'（壳在线但 openTab 抛错，通常=导演台插件未安装/未启用）；
+ * 'timeout'（壳未升级或主线程繁忙，无 ACK）。调用方对后两者只提示原因，不回退独立窗口。
  */
 export type ShellOpenDirectorDeskResult = "ok" | "missing" | "timeout";
 
@@ -38,7 +38,7 @@ export function requestShellOpenDirectorDesk(instanceId: string, timeoutMs = 200
                 cleanup();
                 resolve("ok");
             } else if (data.type === "open-director-desk:missing") {
-                // 壳在线但 openTab 抛错：交给调用方回退独立窗口。
+                // 壳在线但 openTab 抛错：导演台插件未安装/未启用，交给调用方提示。
                 cleanup();
                 resolve("missing");
             }

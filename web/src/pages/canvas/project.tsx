@@ -3139,18 +3139,21 @@ function InfiniteCanvasPage() {
 
     const handleOpenDirectorDesk = useCallback(
         async (deskId: string, _nodeId: string) => {
-            // Harness 插件形态（页面被宿主 iframe 嵌入）：请求宿主壳打开右侧栏「导演台」标签，
-            // 导演台桥由其插件托管（自动拉起 + 心跳），端口对页面不可见也无需探测。
-            // 壳未升级（无 ACK）/主线程繁忙超时/导演台标签打不开（missing）时，回退原流程：
-            // 探测 5080 后开独立窗口，并 toast 标明回退原因供诊断。
+            // Harness 插件形态（页面被宿主 iframe 嵌入）：导演台只能以右侧栏标签的形式打开，
+            // 其服务由导演台插件托管（自动拉起 + 心跳），不存在「独立窗口」这条路。
+            // 因此插件未安装/未启用、或宿主壳没响应时只给可执行的提示，绝不回退去 open 一个空页面。
             if (window.parent !== window) {
                 const shellResult = await requestShellOpenDirectorDesk(deskId);
                 if (shellResult === "ok") return;
-                message.info(t("canvas.node.directorDeskShellFallback", {
-                    reason: shellResult === "missing"
-                        ? t("canvas.node.directorDeskShellMissing")
-                        : t("canvas.node.directorDeskShellTimeout"),
-                }));
+                if (shellResult === "missing") {
+                    modal.info({
+                        title: t("canvas.node.directorDeskPluginMissingTitle"),
+                        content: t("canvas.node.directorDeskPluginMissing"),
+                    });
+                    return;
+                }
+                message.warning(t("canvas.node.directorDeskShellUnavailable"));
+                return;
             }
             // 打开外部导演台插件（3d-director-desk）中对应的实例；插件地址可经 config.js 的 directorDeskUrl 覆盖。
             const baseUrl = directorDeskBaseUrl();
