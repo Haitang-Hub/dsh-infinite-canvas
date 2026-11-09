@@ -57730,11 +57730,62 @@ function chatCompletionsUrl(baseUrl) {
 }
 function channelModelConfig(value) {
   const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const harness = source.harness && typeof source.harness === "object" && !Array.isArray(source.harness) ? source.harness : null;
+  if (harness) {
+    const relay = String(harness.relay || "").trim().replace(/\/$/, "");
+    const provider = String(harness.provider || "").trim();
+    const model2 = String(harness.model || "").trim();
+    if (!relay || !provider || !model2) throw new Error("Harness \u6A21\u578B\u914D\u7F6E\u4E0D\u5B8C\u6574\uFF1A\u8BF7\u5728\u7F51\u9875\u6A21\u578B\u9009\u62E9\u91CC\u91CD\u65B0\u9009\u62E9 Harness \u6A21\u578B");
+    return { transport: "harness", relay, provider, model: model2 };
+  }
   const baseUrl = String(source.baseUrl || "").trim().replace(/\/$/, "");
   const apiKey = String(source.apiKey || "").trim();
   const model = String(source.model || "").trim();
   if (!baseUrl || !apiKey || !model) throw new Error("\u6A21\u578B\u6E20\u9053\u914D\u7F6E\u4E0D\u5B8C\u6574\uFF1A\u8BF7\u5728\u7F51\u9875\u300C\u6A21\u578B\u914D\u7F6E\u300D\u4E2D\u9009\u62E9\u5E26 API Key \u7684\u6587\u672C\u6E20\u9053");
-  return { baseUrl, apiKey, model };
+  return { transport: "channel", baseUrl, apiKey, model };
+}
+async function callChannelModel(channel, body, signal) {
+  if (channel.transport === "harness") {
+    const response2 = await fetch(channel.relay, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider: channel.provider, model: channel.model, ...body }),
+      signal
+    });
+    const payload = await response2.json().catch(() => null);
+    if (!response2.ok || payload?.ok !== true) {
+      throw new Error(typeof payload?.error === "string" && payload.error ? payload.error : `Harness \u6A21\u578B\u8BF7\u6C42\u5931\u8D25\uFF08HTTP ${response2.status}\uFF09`);
+    }
+    const toolCalls2 = (Array.isArray(payload.toolCalls) ? payload.toolCalls : []).map((call) => call && typeof call === "object" ? call : {}).filter((call) => typeof call.name === "string" && call.name).map((call) => ({ id: String(call.id || ""), type: "function", function: { name: String(call.name), arguments: String(call.arguments || "{}") } }));
+    const usage = payload.usage && typeof payload.usage === "object" ? payload.usage : null;
+    return {
+      content: typeof payload.content === "string" ? payload.content : "",
+      toolCalls: toolCalls2,
+      usage: usage ? {
+        prompt_tokens: Number(usage.inputTokens || 0) + Number(usage.cachedInputTokens || 0),
+        completion_tokens: Number(usage.outputTokens || 0),
+        prompt_tokens_details: { cached_tokens: Number(usage.cachedInputTokens || 0) }
+      } : void 0
+    };
+  }
+  const response = await fetch(chatCompletionsUrl(channel.baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${channel.apiKey}` },
+    body: JSON.stringify({ model: channel.model, ...body }),
+    signal
+  });
+  if (!response.ok) {
+    const text2 = await response.text().catch(() => "");
+    throw new Error(`\u6A21\u578B\u8BF7\u6C42\u5931\u8D25\uFF08HTTP ${response.status}\uFF09${text2 ? `\uFF1A${text2.slice(0, 300)}` : ""}`);
+  }
+  const data = await response.json();
+  const message = data.choices?.[0]?.message;
+  const toolCalls = (message?.tool_calls || []).map((call, index) => ({
+    id: String(call.id || `call-${index}`),
+    type: "function",
+    function: { name: String(call.function?.name || ""), arguments: String(call.function?.arguments || "{}") }
+  })).filter((call) => call.function.name);
+  return { content: String(message?.content || ""), toolCalls, usage: data.usage };
 }
 function userLlmContent(prompt, attachments) {
   const images = attachments.filter((item) => item.dataUrl?.startsWith("data:image/"));
@@ -57768,17 +57819,7 @@ async function runChannelTurn(options2) {
     const tools = [...channelToolDefinitions()];
     if (options2.skills?.length && !tools.some((tool) => tool.function.name === SKILL_READ_TOOL.function.name)) tools.push(SKILL_READ_TOOL);
     for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-      const response = await fetch(chatCompletionsUrl(channel.baseUrl), {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${channel.apiKey}` },
-        body: JSON.stringify({ model: channel.model, messages, tools, tool_choice: "auto" }),
-        signal: controller.signal
-      });
-      if (!response.ok) {
-        const body = await response.text().catch(() => "");
-        throw new Error(`\u6A21\u578B\u8BF7\u6C42\u5931\u8D25\uFF08HTTP ${response.status}\uFF09${body ? `\uFF1A${body.slice(0, 300)}` : ""}`);
-      }
-      const data = await response.json();
+      const data = await callChannelModel(channel, { messages, tools, tool_choice: "auto" }, controller.signal);
       if (data.usage) {
         emit("agent_event", {
           type: "usage.updated",
@@ -57789,18 +57830,14 @@ async function runChannelTurn(options2) {
           }
         });
       }
-      const choice = data.choices?.[0]?.message;
-      const toolCalls = (choice?.tool_calls || []).map((call, index) => ({
-        id: String(call.id || `call-${round}-${index}`),
-        type: "function",
-        function: { name: String(call.function?.name || ""), arguments: String(call.function?.arguments || "{}") }
-      })).filter((call) => call.function.name);
+      const text2 = data.content;
+      const toolCalls = data.toolCalls;
       if (toolCalls.length) {
-        const assistant = { role: "assistant", content: choice?.content || null, tool_calls: toolCalls };
+        const assistant = { role: "assistant", content: text2 || null, tool_calls: toolCalls };
         thread.llmMessages.push(assistant);
         messages.push(assistant);
-        if (choice?.content?.trim()) {
-          emit("agent_event", { type: "item.completed", item: { id: `${turnId}:msg-${round}`, type: "agent_message", text: choice.content } });
+        if (text2.trim()) {
+          emit("agent_event", { type: "item.completed", item: { id: `${turnId}:msg-${round}`, type: "agent_message", text: text2 } });
         }
         for (const call of toolCalls) {
           let input = {};
@@ -57842,7 +57879,6 @@ async function runChannelTurn(options2) {
         saveChannelThread(thread);
         continue;
       }
-      const text2 = String(choice?.content || "");
       thread.llmMessages.push({ role: "assistant", content: text2 });
       thread.items.push({ id: `${turnId}:final`, itemId: `${turnId}:final`, role: "assistant", text: text2, turnId });
       emit("agent_event", { type: "item.completed", item: { id: `${turnId}:final`, type: "agent_message", text: text2 } });
@@ -57880,25 +57916,14 @@ async function draftSkillWithChannel(channel, context) {
   const sourceText = context.source === "canvas" ? `\u4EE5\u4E0B\u662F\u5F53\u524D\u753B\u5E03\u7684\u72B6\u6001\u5FEB\u7167\uFF08JSON\uFF09\uFF0C\u8BF7\u63D0\u70BC\u5176\u4E2D\u4F53\u73B0\u7684\u53EF\u590D\u7528\u6D41\u7A0B\uFF1A
 ${context.canvasContext || "\uFF08\u7A7A\uFF09"}` : `\u4EE5\u4E0B\u662F\u5BF9\u8BDD\u8BB0\u5F55\uFF0C\u8BF7\u63D0\u70BC\u5176\u4E2D\u53EF\u590D\u7528\u3001\u503C\u5F97\u56FA\u5316\u4E3A Skill \u7684\u6D41\u7A0B\uFF08\u5982\u679C\u6CA1\u6709\u53EF\u63D0\u70BC\u5185\u5BB9\uFF0C\u8BF7\u8BA9 name \u4E3A\u7A7A\uFF09\uFF1A
 ${context.conversationText || "\uFF08\u7A7A\uFF09"}`;
-  const response = await fetch(chatCompletionsUrl(channel.baseUrl), {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${channel.apiKey}` },
-    body: JSON.stringify({
-      model: channel.model,
-      messages: [
-        { role: "system", content: SKILL_DRAFT_SYSTEM_PROMPT },
-        { role: "user", content: sourceText }
-      ],
-      temperature: 0.2
-    }),
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
-  });
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`\u63D0\u70BC Skill \u5931\u8D25\uFF08HTTP ${response.status}\uFF09${body ? `\uFF1A${body.slice(0, 300)}` : ""}`);
-  }
-  const data = await response.json();
-  const text2 = String(data.choices?.[0]?.message?.content || "");
+  const data = await callChannelModel(channel, {
+    messages: [
+      { role: "system", content: SKILL_DRAFT_SYSTEM_PROMPT },
+      { role: "user", content: sourceText }
+    ],
+    temperature: 0.2
+  }, AbortSignal.timeout(REQUEST_TIMEOUT_MS));
+  const text2 = data.content;
   const jsonMatch = text2.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error("\u6A21\u578B\u672A\u8FD4\u56DE\u6709\u6548\u7684 Skill \u8349\u7A3F");
   const parsed = JSON.parse(jsonMatch[0]);

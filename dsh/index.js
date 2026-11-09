@@ -14,6 +14,7 @@
  */
 
 import { spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -113,6 +114,233 @@ async function probeBridge(baseUrl) {
   } catch (error) {
     return { ok: false, listening: true, reason: `站点探测失败：${error instanceof Error ? error.message : String(error)}` }
   }
+}
+
+/**
+ * Harness 模型接入：插件内 Agent（画布渠道模型引擎）复用 harness 用户配置的模型。
+ *
+ * 两个端点（面板经 lib/client.js 的 postMessage 代理访问，见该文件）：
+ *   GET  /api/infinite-canvas.harness-models  列出宿主 llm 服务已注册的 provider/模型
+ *   POST /api/infinite-canvas.harness-chat    代发一次对话（OpenAI 形态入参），返回文本 + 工具调用
+ *
+ * 红线：provider 的 API key 只由宿主 adapter 在进程内解析，本插件与 iframe/桥都拿不到密钥。
+ * llm 服务用 ctx.get 探测而非 inject——模型路由是辅助能力，宿主缺失/旧版本时插件主体
+ * （桥托管）必须照常激活，端点返回 503 由面板降级提示。
+ */
+
+/** 单次请求的消息数/体量上限，防误循环把宿主日志与内存打爆。 */
+const HARNESS_CHAT_MAX_MESSAGES = 500
+const HARNESS_CHAT_MAX_CHARS = 2_000_000
+/** 与渠道引擎一致的整体超时；生成类工具耗时由调用方轮询，不占模型请求。 */
+const HARNESS_CHAT_TIMEOUT_MS = 600_000
+
+/** 把插件 Agent 的 OpenAI 形态消息历史转成宿主 GenerateOptions 入参。 */
+function toHarnessRequest(entries, provider, model) {
+  const system = []
+  const messages = []
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    if (!entry || typeof entry !== 'object') continue
+    if (entry.role === 'system') {
+      if (typeof entry.content === 'string' && entry.content.trim()) system.push(entry.content)
+      continue
+    }
+    const id = randomUUID()
+    if (entry.role === 'user') {
+      let content
+      if (typeof entry.content === 'string') {
+        content = entry.content.trim() ? [{ type: 'text', text: entry.content }] : []
+      } else if (Array.isArray(entry.content)) {
+        content = []
+        for (const part of entry.content) {
+          if (part?.type === 'text' && typeof part.text === 'string') {
+            if (part.text.trim()) content.push({ type: 'text', text: part.text })
+          } else if (part?.type === 'image_url') {
+            throw new Error('Harness 模型暂不支持图片消息，请改用自配渠道的 vision 模型')
+          }
+        }
+      } else {
+        content = []
+      }
+      if (!content.length) content.push({ type: 'text', text: '(empty)' })
+      messages.push({ id, role: 'user', content, source: { kind: 'user' } })
+      continue
+    }
+    if (entry.role === 'assistant') {
+      const content = []
+      if (typeof entry.content === 'string' && entry.content.trim()) content.push({ type: 'text', text: entry.content })
+      for (const call of Array.isArray(entry.tool_calls) ? entry.tool_calls : []) {
+        content.push({
+          type: 'tool-call',
+          id: String(call?.id || randomUUID()),
+          name: String(call?.function?.name || ''),
+          arguments: String(call?.function?.arguments || '{}'),
+        })
+      }
+      messages.push({ id, role: 'assistant', content, source: { kind: 'model', provider, model } })
+      continue
+    }
+    if (entry.role === 'tool') {
+      const callId = String(entry.tool_call_id || '')
+      messages.push({
+        id,
+        role: 'tool',
+        toolCallId: callId,
+        content: [{ type: 'text', text: String(entry.content ?? '') }],
+        source: { kind: 'tool', callId },
+      })
+    }
+  }
+  return { system: system.join('\n\n'), messages }
+}
+
+/**
+ * 折叠一次 ctx.llm.stream() 的 StreamChunk 流为最终文本 + 工具调用。
+ * block-end 携带的 block 为权威结果；流被截断时回退到 partial 组装。
+ */
+async function foldHarnessStream(stream) {
+  const partials = new Map()
+  const finals = new Map()
+  let usage
+  let finish
+  for await (const chunk of stream) {
+    if (!chunk || typeof chunk !== 'object') continue
+    if (chunk.type === 'block-start') {
+      partials.set(chunk.index, chunk.blockType === 'tool-call' ? { id: '', name: '', arguments: '' } : { text: '' })
+    } else if (chunk.type === 'text-delta' || chunk.type === 'reasoning-delta') {
+      const partial = partials.get(chunk.index)
+      if (partial && 'text' in partial) partial.text += String(chunk.text || '')
+    } else if (chunk.type === 'tool-call-delta') {
+      const partial = partials.get(chunk.index)
+      if (partial) {
+        if (chunk.id) partial.id = String(chunk.id)
+        if (chunk.name) partial.name = String(chunk.name)
+        partial.arguments += String(chunk.argumentsDelta || '')
+      }
+    } else if (chunk.type === 'block-end') {
+      finals.set(chunk.index, chunk.block)
+      partials.delete(chunk.index)
+    } else if (chunk.type === 'usage') {
+      usage = chunk.usage
+    } else if (chunk.type === 'finish') {
+      finish = chunk.reason
+    }
+  }
+  if (finish && (finish.kind === 'error' || finish.kind === 'aborted')) {
+    const failure = finish.failure || {}
+    throw new Error(failure.message || `模型请求失败（${finish.kind}）`)
+  }
+  const lastIndex = Math.max(0, ...finals.keys(), ...partials.keys())
+  const blocks = []
+  for (let index = 0; index <= lastIndex; index += 1) {
+    if (finals.has(index)) {
+      blocks.push(finals.get(index))
+      continue
+    }
+    const partial = partials.get(index)
+    if (!partial) continue
+    blocks.push('name' in partial
+      ? { type: 'tool-call', id: partial.id, name: partial.name, arguments: partial.arguments }
+      : { type: 'text', text: partial.text })
+  }
+  const content = blocks.filter((block) => block.type === 'text').map((block) => block.text).join('')
+  const toolCalls = blocks
+    .filter((block) => block.type === 'tool-call' && block.name)
+    .map((block) => ({ id: block.id, name: block.name, arguments: block.arguments || '{}' }))
+  return { content, toolCalls, usage }
+}
+
+function registerHarnessModelRoutes(ctx) {
+  const llm = typeof ctx.get === 'function' ? ctx.get('llm') : undefined
+  const available = () => llm && typeof llm.listProviders === 'function' && typeof llm.listModels === 'function' && typeof llm.stream === 'function'
+
+  ctx.effect(() => ctx.connection.fetch.register({
+    path: '/api/infinite-canvas.harness-models',
+    methods: ['GET'],
+    requestBody: 'buffered',
+    async fetch() {
+      if (!available()) {
+        return Response.json({ ok: false, error: '宿主 llm 服务不可用（需要 DeepSeek Harness 0.2）' }, { status: 503 })
+      }
+      try {
+        const groups = []
+        for (const provider of llm.listProviders()) {
+          const models = await llm.listModels(provider.id)
+          groups.push({
+            provider: provider.id,
+            providerName: provider.name || provider.id,
+            models: models.map((model) => ({
+              id: model.id,
+              name: model.name || model.id,
+              description: typeof model.description === 'string' ? model.description : '',
+            })),
+          })
+        }
+        return Response.json({ ok: true, groups }, { headers: { 'Cache-Control': 'no-store' } })
+      } catch (error) {
+        return Response.json({ ok: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 })
+      }
+    },
+  }), 'infinite-canvas: harness-models route')
+
+  ctx.effect(() => ctx.connection.fetch.register({
+    path: '/api/infinite-canvas.harness-chat',
+    methods: ['POST'],
+    requestBody: 'buffered',
+    async fetch(request) {
+      if (!available()) {
+        return Response.json({ ok: false, error: '宿主 llm 服务不可用（需要 DeepSeek Harness 0.2）' }, { status: 503 })
+      }
+      let body
+      try {
+        body = await request.json()
+      } catch {
+        return Response.json({ ok: false, error: '请求体不是合法 JSON' }, { status: 400 })
+      }
+      const provider = String(body?.provider || '').trim()
+      const model = String(body?.model || '').trim()
+      if (!provider || !model) return Response.json({ ok: false, error: '缺少 provider/model' }, { status: 400 })
+      if (!llm.listProviders().some((entry) => entry.id === provider)) {
+        return Response.json({ ok: false, error: `provider ${provider} 未在宿主注册` }, { status: 400 })
+      }
+      const entries = Array.isArray(body?.messages) ? body.messages : []
+      if (entries.length > HARNESS_CHAT_MAX_MESSAGES) {
+        return Response.json({ ok: false, error: `消息过多（>${HARNESS_CHAT_MAX_MESSAGES}）` }, { status: 413 })
+      }
+      if (JSON.stringify(entries).length > HARNESS_CHAT_MAX_CHARS) {
+        return Response.json({ ok: false, error: '消息体过大' }, { status: 413 })
+      }
+      let requestInput
+      try {
+        requestInput = toHarnessRequest(entries, provider, model)
+      } catch (error) {
+        return Response.json({ ok: false, error: error instanceof Error ? error.message : String(error) }, { status: 400 })
+      }
+      const tools = (Array.isArray(body?.tools) ? body.tools : [])
+        .map((tool) => tool?.function)
+        .filter((fn) => fn && typeof fn.name === 'string')
+        .map((fn) => ({ name: fn.name, description: String(fn.description || ''), parameters: fn.parameters && typeof fn.parameters === 'object' ? fn.parameters : { type: 'object', properties: {} } }))
+      const temperature = typeof body?.temperature === 'number' ? body.temperature : undefined
+      try {
+        const result = await foldHarnessStream(llm.stream({
+          provider,
+          model,
+          ...(requestInput.system ? { system: requestInput.system } : {}),
+          messages: requestInput.messages,
+          ...(tools.length ? { tools } : {}),
+          ...(temperature !== undefined ? { temperature } : {}),
+          signal: AbortSignal.timeout(HARNESS_CHAT_TIMEOUT_MS),
+        }))
+        return Response.json({
+          ok: true,
+          content: result.content,
+          toolCalls: result.toolCalls,
+          ...(result.usage ? { usage: result.usage } : {}),
+        })
+      } catch (error) {
+        return Response.json({ ok: false, error: error instanceof Error ? error.message : String(error) }, { status: 502 })
+      }
+    },
+  }), 'infinite-canvas: harness-chat route')
 }
 
 export async function apply(ctx, config) {
@@ -263,6 +491,8 @@ export async function apply(ctx, config) {
       return Response.json(snapshot(), { headers: { 'Cache-Control': 'no-store' } })
     },
   }))
+
+  registerHarnessModelRoutes(ctx)
 
   await ensureBridge(false)
 
