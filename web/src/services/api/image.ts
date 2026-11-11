@@ -8,6 +8,7 @@ import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
 import { imageToDataUrl } from "@/services/image-storage";
 import { imageSizePresets, inferMediaScale } from "@/lib/media-size";
+import { chatHarness, decodeHarnessSelection } from "@/lib/harness-bridge";
 import type { ReferenceImage } from "@/types/image";
 
 const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiErrors.${key}`, options);
@@ -901,8 +902,19 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
 }
 
 export async function requestImageQuestion(config: AiConfig, messages: AiTextMessage[], onDelta: (text: string) => void, options?: RequestOptions) {
-    const requestConfig = resolveModelRequestConfig(config, config.model || config.textModel);
-    const script = resolveModelScript(config, config.model || config.textModel);
+    const selection = config.model || config.textModel;
+    // 文本默认模型选了 Harness 时改经宿主代发；端点非流式，完成后一次性回填。
+    if (decodeHarnessSelection(selection)) {
+        try {
+            const answer = (await chatHarness(selection, withSystemMessage(config, messages), { signal: options?.signal })).trim() || apiText("noContent");
+            onDelta(answer);
+            return answer;
+        } catch (error) {
+            throw new Error(readAxiosError(error, apiText("requestFailed")));
+        }
+    }
+    const requestConfig = resolveModelRequestConfig(config, selection);
+    const script = resolveModelScript(config, selection);
     if (script) {
         try {
             const answer = await runModelPlugin<string>({

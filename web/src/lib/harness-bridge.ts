@@ -4,7 +4,8 @@
  *
  * - provider 的 API key 只存在于 harness 进程内，页面与 canvas-agent 都拿不到；
  * - 不在 DSH 面板中时所有请求都会失败，调用方据此降级提示用自配渠道；
- * - 选择值编码进 config.textModel：`harness::<provider>::<model>`，与渠道编码 `channelId::modelName` 区分；
+ * - 选择值编码进 config.agentModel 或 config.textModel：`harness::<provider>::<model>`，
+ *   与渠道编码 `channelId::modelName` 区分；
  * - canvas-agent 在服务端直接回调 relay 端点（服务端到服务端，无 CORS），relay 地址由
  *   宿主客户端在响应里带回的 sourceOrigin 推得。
  */
@@ -91,9 +92,20 @@ export async function harnessRelayUrl(): Promise<string> {
     return `${cachedSourceOrigin}/api/infinite-canvas.harness-chat`;
 }
 
-/** textModel 为 harness 选择时返回 canvas-agent 可用的 harness 渠道载荷，否则返回 null。 */
-export async function buildHarnessChannel(textModel: string): Promise<{ harness: { relay: string; provider: string; model: string } } | null> {
-    const route = decodeHarnessSelection(textModel);
+/** 直接经宿主代发一次 Harness 文本对话（宿主端点非流式，返回完整文本）。 */
+export async function chatHarness(selection: string, messages: unknown[], options?: { signal?: AbortSignal; timeoutMs?: number }): Promise<string> {
+    const route = decodeHarnessSelection(selection);
+    if (!route) throw new Error("不是 Harness 模型");
+    if (options?.signal?.aborted) throw new Error("已取消");
+    const body = await request("chat", { provider: route.provider, model: route.model, messages }, options?.timeoutMs ?? 120_000);
+    if (body.ok !== true) throw new Error(typeof body.error === "string" && body.error ? body.error : "Harness 模型请求失败");
+    if (options?.signal?.aborted) throw new Error("已取消");
+    return typeof body.content === "string" ? body.content : "";
+}
+
+/** Agent 模型为 harness 选择时返回 canvas-agent 可用的 harness 渠道载荷，否则返回 null。 */
+export async function buildHarnessChannel(selection: string): Promise<{ harness: { relay: string; provider: string; model: string } } | null> {
+    const route = decodeHarnessSelection(selection);
     if (!route) return null;
     return { harness: { ...route, relay: await harnessRelayUrl() } };
 }

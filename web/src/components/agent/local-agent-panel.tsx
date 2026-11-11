@@ -18,8 +18,8 @@ import { randomId } from "@/lib/utils";
 import { uploadImage } from "@/services/image-storage";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useAgentSkillStore } from "@/stores/use-agent-skill-store";
-import { resolveModelRequestConfig, useConfigStore } from "@/stores/use-config-store";
-import { buildHarnessChannel, decodeHarnessSelection, encodeHarnessSelection, listHarnessModels } from "@/lib/harness-bridge";
+import { effectiveAgentModel, encodeChannelModel, resolveModelRequestConfig, useConfigStore } from "@/stores/use-config-store";
+import { buildHarnessChannel, decodeHarnessSelection, encodeHarnessSelection, listHarnessModels, type HarnessModelGroup } from "@/lib/harness-bridge";
 import { useShallow } from "zustand/react/shallow";
 import { useAgentStore, type AgentAttachment, type AgentBootstrapStatus, type AgentCanvasContext, type AgentCanvasReference, type AgentChatItem, type AgentConversationState, type AgentModel, type AgentPanelTab, type AgentPendingApproval, type AgentPendingToolCall, type AgentPermissionMode, type AgentReasoningEffort, type AgentThreadSummary } from "@/stores/use-agent-store";
 import { type CanvasAgentOp, type CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
@@ -615,42 +615,60 @@ export function LocalAgentPanel({ embedded, headless }: { embedded?: boolean; he
         if (connected) void loadSkills(endpoint, token);
     }, [connected, endpoint, loadSkills, token]);
 
-    // 模型引擎：text 渠道为 harness 选择时，经 iframe 桥拉取 DSH 模型列表；否则沿用渠道模型
+    // 模型引擎：harness 分组经 iframe 桥异步拉取（不可用时静默省略），渠道模型来自本地配置。
+    // 两者都列在下拉里：选中 harness 值会写回 agentModel，发送时据此走宿主代理；
+    // agentModel 未设置时跟随文本默认模型。
     useEffect(() => {
         if (!connected) return;
         let disposed = false;
-        let lastTextModel = useConfigStore.getState().config.textModel;
-        const applyModels = async () => {
+        let lastAgentModel = effectiveAgentModel(useConfigStore.getState().config);
+        let harnessGroups: HarnessModelGroup[] = [];
+        const applyModels = () => {
             const configState = useConfigStore.getState().config;
-            const harnessRoute = decodeHarnessSelection(configState.textModel);
-            if (harnessRoute) {
-                try {
-                    const groups = await listHarnessModels();
-                    if (disposed) return;
-                    const selection = encodeHarnessSelection(harnessRoute.provider, harnessRoute.model);
-                    const models = groups.flatMap((group) => group.models.map((item) => {
-                        const id = encodeHarnessSelection(group.provider, item.id);
-                        return { id, model: id, displayName: `${item.name} (${group.providerName})`, defaultReasoningEffort: "medium", supportedReasoningEfforts: [], isDefault: id === selection } as AgentModel;
-                    }));
-                    if (!models.length) return;
-                    localStorage.setItem("canvas-agent-model", selection);
-                    setAgentState({ models, model: selection, reasoningEffort: "" });
-                } catch {
-                    // 桥未就绪时保留现有模型列表，连接后 textModel 变化会重试
-                }
-                return;
+            const options = [
+                ...harnessGroups.flatMap((group) => group.models.map((item) => ({
+                    value: encodeHarnessSelection(group.provider, item.id),
+                    label: `${item.name} (${group.providerName})`,
+                }))),
+                ...configState.channels.flatMap((channel) => channel.models
+                    .filter((model) => model.capability === "text")
+                    .map((model) => ({
+                        value: encodeChannelModel(channel.id, model.name),
+                        label: channel.name ? `${model.name} (${channel.name})` : model.name,
+                    }))),
+            ];
+            const agentModel = effectiveAgentModel(configState);
+            const harnessRoute = decodeHarnessSelection(agentModel);
+            // harness 列表加载前保留当前 harness 选择，避免下拉先被重置到渠道模型
+            if (harnessRoute && !options.some((option) => option.value === agentModel)) {
+                options.unshift({ value: agentModel, label: `${harnessRoute.model} (Harness)` });
             }
-            const resolved = resolveModelRequestConfig(configState, configState.textModel);
-            if (!resolved.model) return;
-            const models = [{ id: resolved.model, model: resolved.model, displayName: resolved.model, defaultReasoningEffort: "medium", supportedReasoningEfforts: [], isDefault: true } as AgentModel];
-            localStorage.setItem("canvas-agent-model", resolved.model);
-            setAgentState({ models, model: resolved.model, reasoningEffort: "" });
+            if (!options.length) return;
+            const selection = options.some((option) => option.value === agentModel) ? agentModel : options[0].value;
+            const models = options.map<AgentModel>((option) => ({
+                id: option.value,
+                model: option.value,
+                displayName: option.label,
+                defaultReasoningEffort: "medium",
+                supportedReasoningEfforts: [],
+                isDefault: option.value === agentModel,
+            }));
+            localStorage.setItem("canvas-agent-model", selection);
+            setAgentState({ models, model: selection, reasoningEffort: "" });
         };
-        void applyModels();
+        applyModels();
+        void listHarnessModels()
+            .then((groups) => {
+                if (disposed) return;
+                harnessGroups = groups;
+                applyModels();
+            })
+            .catch(() => undefined);
         const unsubscribe = useConfigStore.subscribe((state) => {
-            if (state.config.textModel === lastTextModel) return;
-            lastTextModel = state.config.textModel;
-            void applyModels();
+            const agentModel = effectiveAgentModel(state.config);
+            if (agentModel === lastAgentModel) return;
+            lastAgentModel = agentModel;
+            applyModels();
         });
         return () => {
             disposed = true;
@@ -675,8 +693,9 @@ export function LocalAgentPanel({ embedded, headless }: { embedded?: boolean; he
         const text = prompt.trim();
         const files = attachments;
         const configState = useConfigStore.getState().config;
+        const agentModel = effectiveAgentModel(configState);
         let channelPayload: { baseUrl: string; apiKey: string; model: string } | { harness: { relay: string; provider: string; model: string } };
-        if (decodeHarnessSelection(configState.textModel)) {
+        if (decodeHarnessSelection(agentModel)) {
             if (files.length || useAgentStore.getState().canvasReferences.some((item) => item.kind === "image")) {
                 const text = i18n.t("agent.runtime.channelHarnessImagesUnsupported");
                 addMessage({ role: "error", title: rt("sendFailed"), text });
@@ -684,7 +703,7 @@ export function LocalAgentPanel({ embedded, headless }: { embedded?: boolean; he
                 return;
             }
             try {
-                const built = await buildHarnessChannel(configState.textModel);
+                const built = await buildHarnessChannel(agentModel);
                 if (!built) throw new Error(i18n.t("agent.runtime.channelHarnessUnavailable"));
                 channelPayload = built;
             } catch (error) {
@@ -694,7 +713,7 @@ export function LocalAgentPanel({ embedded, headless }: { embedded?: boolean; he
                 return;
             }
         } else {
-            const textChannel = resolveModelRequestConfig(configState, configState.textModel);
+            const textChannel = resolveModelRequestConfig(configState, agentModel);
             if (!textChannel.baseUrl || !textChannel.apiKey || !textChannel.model) {
                 const text = i18n.t("agent.runtime.channelMissing");
                 addMessage({ role: "error", title: rt("sendFailed"), text });
@@ -1532,7 +1551,8 @@ export function LocalAgentPanel({ embedded, headless }: { embedded?: boolean; he
                         onModelChange={(model) => {
                             const selected = models.find((item) => item.model === model);
                             if (!selected) return;
-                            if (decodeHarnessSelection(model)) useConfigStore.getState().updateConfig("textModel", model);
+                            // 发送时以 config.agentModel（未设置则 textModel）决定渠道/harness，选中任何模型都要写回
+                            useConfigStore.getState().updateConfig("agentModel", model);
                             const effort = selected.defaultReasoningEffort || selected.supportedReasoningEfforts[0]?.reasoningEffort;
                             localStorage.setItem("canvas-agent-model", model);
                             if (effort) localStorage.setItem("canvas-agent-reasoning-effort", effort);

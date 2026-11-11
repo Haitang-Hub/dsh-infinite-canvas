@@ -19,7 +19,14 @@
   宿主 0.2.1-rc.5 已移除该服务，inject 会让条目永久 pending 炸掉 web boot；
   旧宿主上仍生效，导演台侧无此入口）；
 - 导演台侧：`useTabInfo` 的 `instanceId` 导航参数（画布经 openTab 打开时用）、
-  React 19 + three.js 相关注释。
+  React 19 + three.js 相关注释；
+- 设置页：两个插件各注册自己的 `settings.section`（id / 标签 / 图标分别为
+  `haitang-aigc-infinite-canvas`「无限画布」与 `haitang-aigc-director-desk`「3D 导演台」），
+  渠道与默认值按 `projects.<id>` 分区独立存储；导演台 `TEXT_MODELS_ONLY = true`，
+  只暴露一个文本模型（同时用于 Agent），画布保留文本/Agent 两栏并排（均可选 Harness）与图片/视频/语音及生成默认值。
+  默认渠道也不同：画布是 DeepSeek + 火山方舟 + 百炼三渠道，导演台只有 DeepSeek
+  文本渠道；`shared-settings.js` 会把旧默认（OpenAI 单渠道 / 三渠道组合）在读取时
+  收敛为文本渠道，用户加过 Key 或改过的配置保持原样。
 
 ## 改动后的同步流程
 

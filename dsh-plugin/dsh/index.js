@@ -19,6 +19,7 @@ import { mkdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import Schema from '@deepseek-ai/schemastery'
+import { projectSwitches, readSharedSettings, sharedSettingsPath, updateSharedSettings } from './shared-settings.js'
 
 export const name = 'dsh-infinite-canvas'
 export const inject = ['connection']
@@ -356,6 +357,20 @@ export async function apply(ctx, config) {
     restarts: 0,
   }
 
+  // 共享设置（本项目自己的设置页）：这里只取本项目的运行期开关。
+  // 读取失败按默认开启处理，设置文件损坏不应该拦住桥的启动。
+  const settingsPath = sharedSettingsPath(config.root)
+  let autoStart = true
+  let autoRestart = true
+  try {
+    const shared = await readSharedSettings(config.root)
+    const switches = projectSwitches(shared, 'infinite-canvas')
+    autoStart = switches.autoStart
+    autoRestart = switches.autoRestart
+  } catch (error) {
+    ctx.logger.warn('infinite-canvas: read shared settings failed: %s', error instanceof Error ? error.message : String(error))
+  }
+
   /** 面板读取的稳定快照：只含可 JSON 化的状态，不含子进程句柄。 */
   const snapshot = () => ({
     ready: state.ready,
@@ -363,6 +378,8 @@ export async function apply(ctx, config) {
     port: config.port,
     supervised: config.spawn,
     restarts: state.restarts,
+    autoStart,
+    autoRestart,
     ...(state.error ? { error: state.error } : {}),
   })
 
@@ -433,7 +450,12 @@ export async function apply(ctx, config) {
    * 否则「重启服务」按钮会在 starting 窗口内静默失效。
    */
   let restartPending = false
-  async function ensureOnce(force) {
+  /**
+   * @param force 忽略现有桥并重建
+   * @param mode  init=插件加载时，heartbeat=心跳，manual=用户点「重启服务」
+   * 自动启动/自动重启只约束前两者：手动按钮是用户的明确意图，始终生效（仍受 spawn 配置约束）。
+   */
+  async function ensureOnce(force, mode = 'manual') {
     if (force && state.child) {
       try { state.child.kill() } catch { /* 已经退出 */ }
       state.child = null
@@ -461,20 +483,31 @@ export async function apply(ctx, config) {
       state.error = '插件配置 spawn=false，只复用外部桥；当前没有可用桥'
       return
     }
+    if (mode !== 'manual') {
+      if (!autoStart) {
+        state.error = '已在「无限画布」设置中关闭自动启动；可点「重启服务」手动拉起'
+        return
+      }
+      // 首次加载不算“重启”，autoRestart 只拦心跳里的补拉。
+      if (mode === 'heartbeat' && !autoRestart) {
+        state.error = '服务已断开；自动重启已关闭，可点「重启服务」手动拉起'
+        return
+      }
+    }
     if (await spawnBridge()) state.restarts += 1
   }
 
-  async function ensureBridge(force) {
+  async function ensureBridge(force, mode = 'manual') {
     if (state.starting) {
       if (force) restartPending = true
       return
     }
     state.starting = true
     try {
-      await ensureOnce(force)
+      await ensureOnce(force, mode)
       if (restartPending) {
         restartPending = false
-        await ensureOnce(true)
+        await ensureOnce(true, 'manual')
       }
     } finally {
       state.starting = false
@@ -487,18 +520,70 @@ export async function apply(ctx, config) {
     methods: ['POST'],
     requestBody: 'buffered',
     async fetch() {
-      await ensureBridge(true)
+      await ensureBridge(true, 'manual')
       return Response.json(snapshot(), { headers: { 'Cache-Control': 'no-store' } })
+    },
+  }))
+
+  /** PUT 后立即让本项目的运行期开关生效：关掉自动启动会停掉自己托管的桥，重新打开则马上补拉。 */
+  async function applyRuntimeSettings(settings) {
+    const switches = projectSwitches(settings, 'infinite-canvas')
+    const nextStart = switches.autoStart
+    const nextRestart = switches.autoRestart
+    const startTurnedOff = autoStart && !nextStart
+    autoStart = nextStart
+    autoRestart = nextRestart
+    if (startTurnedOff) {
+      if (state.child) {
+        try { state.child.kill() } catch { /* 已经退出 */ }
+        state.child = null
+      }
+      state.ready = false
+      state.error = '自动启动已关闭，托管服务已停止'
+      return
+    }
+    if (autoStart && !state.ready) await ensureBridge(false, 'manual')
+  }
+
+  const sharedPayload = settings => ({
+    ok: true,
+    settings,
+    service: { ...snapshot(), root: config.root, spawn: config.spawn, settingsPath },
+  })
+
+  // 「无限画布」共享设置：两个插件同源注册，同 id 的 settings.section 读的是同一份文件。
+  ctx.effect(() => ctx.connection.fetch.register({
+    path: '/api/infinite-canvas.shared-settings',
+    methods: ['GET', 'PUT'],
+    requestBody: 'buffered',
+    async fetch(request) {
+      if ((request.method || 'GET').toUpperCase() === 'GET') {
+        const settings = await readSharedSettings(config.root)
+        return Response.json(sharedPayload(settings), { headers: { 'Cache-Control': 'no-store' } })
+      }
+      let body
+      try {
+        body = await request.json()
+      } catch {
+        return Response.json({ ok: false, error: '请求体不是合法 JSON' }, { status: 400 })
+      }
+      try {
+        const settings = await updateSharedSettings(config.root, body)
+        await applyRuntimeSettings(settings)
+        return Response.json(sharedPayload(settings), { headers: { 'Cache-Control': 'no-store' } })
+      } catch (error) {
+        return Response.json({ ok: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 })
+      }
     },
   }))
 
   registerHarnessModelRoutes(ctx)
 
-  await ensureBridge(false)
+  await ensureBridge(false, 'init')
 
-  // 心跳：桥退出 / 被外部杀掉 / 端口被占后释放，都会在这里被拉回。
+  // 心跳：桥退出 / 被外部杀掉 / 端口被占后释放，都会在这里被拉回（关闭自动重启后只探测状态）。
   ctx.effect(() => {
-    const timer = setInterval(() => { void ensureBridge(false) }, HEARTBEAT_MS)
+    const timer = setInterval(() => { void ensureBridge(false, 'heartbeat') }, HEARTBEAT_MS)
     return () => {
       clearInterval(timer)
       if (state.child) {

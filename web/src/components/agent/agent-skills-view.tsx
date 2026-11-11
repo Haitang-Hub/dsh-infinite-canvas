@@ -8,7 +8,7 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { createAgentSkill, createAgentSkillDraft, deleteAgentSkill, fetchAgentSkill, postState, setAgentSkillEnabled, updateAgentSkill, type AgentSkillDetail, type AgentSkillDraft, type AgentSkillInterface, type AgentSkillScope, type AgentSkillSummary } from "@/services/api/canvas-agent";
 import { useAgentSkillStore } from "@/stores/use-agent-skill-store";
 import { useAgentStore, type AgentChatItem } from "@/stores/use-agent-store";
-import { resolveModelRequestConfig, useConfigStore } from "@/stores/use-config-store";
+import { effectiveAgentModel, resolveModelRequestConfig, useConfigStore } from "@/stores/use-config-store";
 import { buildHarnessChannel, decodeHarnessSelection } from "@/lib/harness-bridge";
 import { useThemeStore } from "@/stores/use-theme-store";
 
@@ -97,17 +97,18 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
         if (source === "canvas" && !agent.canvasContext) return message.warning(t("agent.skillManager.noCanvas"));
         if (!clientId) return message.warning(t("agent.skillManager.connecting"));
         const configState = useConfigStore.getState().config;
+        const agentModel = effectiveAgentModel(configState);
         let channelPayload: { baseUrl: string; apiKey: string; model: string } | { harness: { relay: string; provider: string; model: string } };
-        if (decodeHarnessSelection(configState.textModel)) {
+        if (decodeHarnessSelection(agentModel)) {
             try {
-                const built = await buildHarnessChannel(configState.textModel);
+                const built = await buildHarnessChannel(agentModel);
                 if (!built) throw new Error(t("agent.skillManager.harnessUnavailable"));
                 channelPayload = built;
             } catch {
                 return message.warning(t("agent.skillManager.harnessUnavailable"));
             }
         } else {
-            const textChannel = resolveModelRequestConfig(configState, configState.textModel);
+            const textChannel = resolveModelRequestConfig(configState, agentModel);
             if (!textChannel.baseUrl || !textChannel.apiKey || !textChannel.model) return message.warning(t("agent.skillManager.channelMissing"));
             channelPayload = { baseUrl: textChannel.baseUrl, apiKey: textChannel.apiKey, model: textChannel.model };
         }
