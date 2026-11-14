@@ -182,7 +182,7 @@ function directorDefaultChannels() {
   }))
 }
 
-const PROJECT_TEXT_KEYS = ['textModel', 'agentModel', 'imageModel', 'videoModel', 'audioModel', 'imageRatio', 'videoRatio', 'videoSeconds', 'canvasImageCount', 'vquality', 'videoGenerateAudio', 'videoWatermark']
+const PROJECT_TEXT_KEYS = ['textModel', 'agentModel', 'imageModel', 'videoModel', 'audioModel', 'imageRatio', 'videoRatio', 'videoSeconds', 'canvasImageCount', 'vquality', 'videoGenerateAudio', 'videoWatermark', 'bridgeToken']
 const PROJECT_BOOL_KEYS = ['autoFocusOnSelect']
 const PROJECT_SWITCH_KEYS = ['autoStart', 'autoRestart']
 
