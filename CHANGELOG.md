@@ -2,6 +2,7 @@
 
 ## Unreleased
 
++ [修复] 渠道模型多轮工具调用全坏：runChannelTurn 的工具结果只推进了持久化历史（thread.llmMessages），漏推进本轮请求的 messages 数组——下一轮请求的历史以 assistant tool_calls 结尾且没有工具结果，DeepSeek 直接报「Messages history ends with unresolved tools」（红色错误），宽松的提供方（agnes 等 harness 模型）则看不到工具结果而重复调用同一工具（同一节点建了两份）或胡乱回复「工具返回异常」。修复为结果同时进两个数组（persist 历史本就完整，跨 turn 场景不受影响）；此为渠道/harness 模型操作画布一系列失败的共同根源。
 + [变更] 与 Canvas Director 仓库彻底解耦（此前仅剩 URL 级引用）：①官方画布节点插件市场迁入本仓库（plugins/canvas/：registry 集中构建 + plugin-sdk + 各插件源码，`npm run build` 独立产出 5 插件 + official-plugins.json），新增 .github/workflows/publish-plugins.yml（打 v* tag 或手动触发 → 强推孤儿分支 plugins-dist）；②PLUGIN_REGISTRY_URL 默认值改指 `cdn.jsdelivr.net/gh/Haitang-Hub/dsh-infinite-canvas@plugins-dist/official-plugins.json`（VITE_PLUGIN_REGISTRY_URL 可覆盖）；③版本检查 VERSION/CHANGELOG 改拉本仓库 full 分支（dsh 仓库 main 是发布产物分支、无根 VERSION）；④UI GitHub 链接改指本仓库；⑤web preview 端口 5070→5075 与 dev 统一，5070 让还给 Canvas Director。注意：首次发布需在 Actions 手动跑一次 Publish Official Plugins 工作流，此前插件市场拉取会失败（优雅降级）。
 + [变更] 插件设置页「连接 Token」输入框改为密码态（type=password，默认圆点显示，与 API Key 一致）。
 

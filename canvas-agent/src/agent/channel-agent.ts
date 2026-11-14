@@ -225,7 +225,13 @@ export async function runChannelTurn(options: RunChannelTurnOptions): Promise<vo
                     }
                     emit("agent_event", { type: "item.completed", item: { ...item } });
                     const output = errorText ? JSON.stringify({ error: errorText }) : JSON.stringify(result ?? { ok: true });
-                    thread.llmMessages.push({ role: "tool", tool_call_id: call.id, name: call.function.name, content: output.slice(0, TOOL_RESULT_MAX_CHARS) });
+                    // 工具结果必须同时进持久化历史（thread.llmMessages）和本轮请求消息（messages）——
+                    // 只进持久化的话，下一轮请求的历史以 assistant tool_calls 结尾、没有工具结果：
+                    // DeepSeek 直接报「Messages history ends with unresolved tools」，宽松的提供方
+                    // （如 agnes）则看不到结果而重复调用工具或胡乱道歉。
+                    const toolMessage: ChannelLlmMessage = { role: "tool", tool_call_id: call.id, name: call.function.name, content: output.slice(0, TOOL_RESULT_MAX_CHARS) };
+                    thread.llmMessages.push(toolMessage);
+                    messages.push(toolMessage);
                     thread.items.push({
                         id: `${threadId}:${turnId}:${call.id}`,
                         itemId: call.id,
