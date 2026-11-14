@@ -57891,7 +57891,9 @@ async function runChannelTurn(options2) {
           }
           emit("agent_event", { type: "item.completed", item: { ...item } });
           const output = errorText ? JSON.stringify({ error: errorText }) : JSON.stringify(result ?? { ok: true });
-          thread.llmMessages.push({ role: "tool", tool_call_id: call.id, name: call.function.name, content: output.slice(0, TOOL_RESULT_MAX_CHARS) });
+          const toolMessage = { role: "tool", tool_call_id: call.id, name: call.function.name, content: output.slice(0, TOOL_RESULT_MAX_CHARS) };
+          thread.llmMessages.push(toolMessage);
+          messages.push(toolMessage);
           thread.items.push({
             id: `${threadId}:${turnId}:${call.id}`,
             itemId: call.id,
