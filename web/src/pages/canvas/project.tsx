@@ -1386,6 +1386,10 @@ function InfiniteCanvasPage() {
             if (clickedDefinition?.hidePanel) {
                 // Clicking a display-only plugin node selects it without opening a lower panel.
                 setDialogNodeId((current) => (current === clickedNodeId ? current : null));
+                if (useConfigStore.getState().config.autoFocusOnSelect) {
+                    // No panel opens for these nodes, so center immediately.
+                    focusNodeRef.current(clickedNodeId);
+                }
             } else if (clickedNode?.type !== CanvasNodeType.Group) {
                 setDialogNodeId(clickedNodeId);
                 if (useConfigStore.getState().config.autoFocusOnSelect) {
@@ -1832,6 +1836,52 @@ function InfiniteCanvasPage() {
 
     const handleConfigNodeChange = useCallback((nodeId: string, patch: Partial<CanvasNodeData["metadata"]>) => {
         setNodes((prev) => prev.map((node) => (node.id === nodeId ? applyNodeConfigPatch(node, patch) : node)));
+    }, []);
+
+    // 导演台注册表同步：宿主里导演台插件经 iframe postMessage 扇出工程名称注册表，
+    // 按 metadata.directorDeskId 匹配刷新节点名称缓存，保证画布节点与导演台命名一致。
+    useEffect(() => {
+        let attempts = 0;
+        const requestRegistry = () => {
+            try {
+                window.parent?.postMessage({ source: "infinite-canvas-page", type: "director-desks:request" }, "*");
+            } catch {
+                // 宿主不可达时忽略
+            }
+        };
+        const handleMessage = (event: MessageEvent) => {
+            if (event.source !== window.parent) return;
+            const data = event.data as { type?: string; desks?: Array<{ id?: unknown; name?: unknown }> } | null;
+            if (data?.type !== "director-desks:sync" || !Array.isArray(data.desks)) return;
+            const names = new Map<string, string>();
+            for (const desk of data.desks) {
+                const id = typeof desk?.id === "string" ? desk.id : "";
+                const name = typeof desk?.name === "string" ? desk.name.trim() : "";
+                if (id && name) names.set(id, name);
+            }
+            if (names.size === 0) return;
+            setNodes((prev) =>
+                prev.map((node) => {
+                    if (node.type !== CanvasNodeType.Director) return node;
+                    const deskId = node.metadata?.directorDeskId;
+                    const name = deskId ? names.get(deskId) : undefined;
+                    if (!name || node.metadata?.directorDeskName === name) return node;
+                    return { ...node, metadata: { ...node.metadata, directorDeskName: name } };
+                })
+            );
+        };
+        window.addEventListener("message", handleMessage);
+        requestRegistry();
+        // 导演台标签可能尚未打开：前 10 秒每 2 秒重试一次查询，收到推送后重试自然停止也有意义（幂等）。
+        const retryTimer = window.setInterval(() => {
+            attempts += 1;
+            requestRegistry();
+            if (attempts >= 5) window.clearInterval(retryTimer);
+        }, 2000);
+        return () => {
+            window.removeEventListener("message", handleMessage);
+            window.clearInterval(retryTimer);
+        };
     }, []);
 
     const downloadNodeImage = useCallback((node: CanvasNodeData) => {

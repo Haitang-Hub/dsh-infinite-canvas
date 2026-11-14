@@ -1,4 +1,4 @@
-import { App, Button, Drawer, Input, Space, Switch } from "antd";
+import { App, Button, Drawer, Input, Select, Space, Switch } from "antd";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -49,12 +49,24 @@ export function PromptSourceEditorDrawer({ open, source, onSave, onClose }: { op
                     <Input value={draft.name} onChange={(event) => patch({ name: event.target.value })} placeholder={t("config.promptSources.editor.namePlaceholder")} />
                 </label>
                 <label className="block">
-                    <span className="mb-1.5 block text-sm font-medium">JSON URL</span>
-                    <Input value={draft.url} onChange={(event) => patch({ url: event.target.value })} placeholder="https://example.com/prompts.json" />
+                    <span className="mb-1.5 block text-sm font-medium">{t("config.promptSources.editor.url")}</span>
+                    <Input value={draft.url} onChange={(event) => patch({ url: event.target.value })} placeholder="https://example.com/prompts.json | https://raw.githubusercontent.com/org/repo/main/README.md" />
                 </label>
                 <label className="block">
                     <span className="mb-1.5 block text-sm font-medium">{t("config.promptSources.editor.homepage")}</span>
                     <Input value={draft.homepage} onChange={(event) => patch({ homepage: event.target.value })} placeholder="https://example.com" />
+                </label>
+                <label className="block">
+                    <span className="mb-1.5 block text-sm font-medium">{t("config.promptSources.editor.mediaType")}</span>
+                    <Select
+                        className="w-full"
+                        value={draft.mediaType}
+                        options={[
+                            { value: "image", label: t("config.promptSources.media.image") },
+                            { value: "video", label: t("config.promptSources.media.video") },
+                        ]}
+                        onChange={(mediaType) => patch({ mediaType })}
+                    />
                 </label>
                 <div className="flex items-center justify-between border-y border-stone-200 py-3 dark:border-stone-800">
                     <span className="text-sm font-medium">{t("config.promptSources.editor.enabled")}</span>

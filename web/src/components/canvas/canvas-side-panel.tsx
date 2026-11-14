@@ -1,5 +1,5 @@
 import { memo, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { App, Empty, Input, Popconfirm, Select, Spin, Tag, Tooltip } from "antd";
+import { App, Empty, Input, Popconfirm, Segmented, Select, Spin, Tag, Tooltip } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { BookOpen, Check, ChevronRight, Download, Eye, FileText, Image as ImageIcon, LayoutGrid, ListChecks, Music2, Plus, Rows3, Search, Settings2, Square, Trash2, Type, Video, X } from "lucide-react";
 import { motion } from "motion/react";
@@ -523,8 +523,10 @@ const CanvasPromptsTab = memo(function CanvasPromptsTab({ onInsert, theme }: { o
     const sources = usePromptSourceStore((state) => state.sources);
     const enabledSources = useMemo(() => sources.filter((source) => source.enabled), [sources]);
     const [keyword, setKeyword] = useState("");
+    const [mediaFilter, setMediaFilter] = useState<"all" | "image" | "video">("all");
     const [expanded, setExpanded] = useState<Record<string, boolean>>({});
     const [detail, setDetail] = useState<Prompt | null>(null);
+    const visibleSources = useMemo(() => enabledSources.filter((source) => mediaFilter === "all" || (source.mediaType ?? "image") === mediaFilter), [enabledSources, mediaFilter]);
 
     const copyPrompt = async (prompt: string) => {
         try {
@@ -537,16 +539,28 @@ const CanvasPromptsTab = memo(function CanvasPromptsTab({ onInsert, theme }: { o
 
     return (
         <div className="flex h-full flex-col">
-            <div className="px-3 pb-2.5 pt-1">
+            <div className="space-y-2 px-3 pb-2.5 pt-1">
                 <Input size="small" allowClear prefix={<Search className="size-3.5 text-stone-400" />} placeholder={t("canvas.sidePanel.searchPrompts")} value={keyword} onChange={(e) => setKeyword(e.target.value)} />
+                <Segmented
+                    size="small"
+                    block
+                    value={mediaFilter}
+                    onChange={(value) => setMediaFilter(value as "all" | "image" | "video")}
+                    options={[
+                        { value: "all", label: t("canvas.sidePanel.mediaAll") },
+                        { value: "image", label: t("canvas.sidePanel.mediaImage") },
+                        { value: "video", label: t("canvas.sidePanel.mediaVideo") },
+                    ]}
+                />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
                 <div className="space-y-1">
-                    {enabledSources.length ? enabledSources.map((source) => (
+                    {visibleSources.length ? visibleSources.map((source) => (
                         <PromptSourceGroup
                             key={source.id}
                             sourceId={source.id}
                             sourceName={source.name}
+                            mediaType={source.mediaType}
                             keyword={keyword}
                             open={!!expanded[source.id]}
                             theme={theme}
@@ -565,6 +579,7 @@ const CanvasPromptsTab = memo(function CanvasPromptsTab({ onInsert, theme }: { o
 function PromptSourceGroup({
     sourceId,
     sourceName,
+    mediaType,
     keyword,
     open,
     theme,
@@ -574,6 +589,7 @@ function PromptSourceGroup({
 }: {
     sourceId: string;
     sourceName: string;
+    mediaType: "image" | "video";
     keyword: string;
     open: boolean;
     theme: CanvasTheme;
@@ -593,13 +609,13 @@ function PromptSourceGroup({
         return items.filter((item) => [item.title, item.prompt, ...item.tags].join(" ").toLowerCase().includes(q));
     }, [query.data, keyword]);
 
-    const insertPrompt = (item: Prompt) => onInsert({ kind: "text", content: item.prompt, title: item.title });
+    const insertPrompt = (item: Prompt) => onInsert({ kind: "text", content: item.prompt, title: `${mediaType === "video" ? t("canvas.sidePanel.mediaVideo") : t("canvas.sidePanel.mediaImage")}：${item.title}` });
 
     return (
         <div>
             <button type="button" onClick={onToggle} className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1.5 text-left text-xs font-semibold opacity-75 transition hover:opacity-100">
                 <ChevronRight className={cn("size-3.5 transition-transform", showResults && "rotate-90")} />
-                <BookOpen className="size-3.5" />
+                {mediaType === "video" ? <Video className="size-3.5" /> : <BookOpen className="size-3.5" />}
                 <span className="min-w-0 flex-1 truncate">{sourceName}</span>
                 {showResults && query.isSuccess ? <span className="opacity-50">{filtered.length}</span> : null}
             </button>

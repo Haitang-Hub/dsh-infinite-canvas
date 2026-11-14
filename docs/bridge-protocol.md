@@ -18,21 +18,21 @@
 
 ## 协议版本
 
-- `AGENT_PROTOCOL_VERSION`（canvas-agent `src/canvas/session.ts`，当前 **7**）：
+- `AGENT_PROTOCOL_VERSION`（canvas-agent `src/canvas/session.ts`，当前 **8**）：
   hello 事件携带，画布执行器校验，不匹配即断开。
 - 版本策略：不兼容变更必须递增；执行器/桥两侧同步更新。
 
 ## 连接
 
 1. **健康探测**：`GET /health`（免 token）→ `{ ok, plugin, site, version, dataDir,
-   protocolVersion, hasCanvas, clients, codexBusy, conversation }`，详见下文「健康检查」。
+   protocolVersion, hasCanvas, clients, engineBusy, conversation }`，详见下文「健康检查」。
 2. **配置发现**：`GET /bootstrap`（免 token）→ `{ ok, url, token }`。
    页面 localStorage 已有 token 时跳过。token 落盘 `~/.infinite-canvas/canvas-agent.json`。
 3. **SSE 订阅**：`GET /events?token=&clientId=&role=status`。
    - 缺省（不带 `role`）：画布执行器；首个连接成为活跃工具目标，可传 `clientId` 复用身份。
    - `role=status`：只收事件的旁听连接，不参与工具路由。
 4. **hello 事件**：连接建立后服务端下发 `{ ok, protocolVersion, clientId, workspace,
-   conversation, codex, pendingApprovals }`。
+   conversation, engine, pendingApprovals }`。
 5. **心跳**：服务端每 15s 下发 `ping` 事件保活；执行器掉线由 SSE 连接关闭检测，
    该连接上未完成的工具请求立即 reject。
 
@@ -52,11 +52,11 @@
 
 ## 会话与技能端点（token 鉴权）
 
-- 对话：`/agent/codex/workspace`、`/agent/codex/models`、`/agent/codex/threads`（列表 /
-  `new` / `reset` / `:threadId` / `resume` / `delete`）、`/agent/codex/history/ack`、
-  `/agent/codex/turn`、`/agent/codex/interrupt`。
+- 对话：`/agent/agent/workspace`、`/agent/agent/models`、`/agent/agent/threads`（列表 /
+  `new` / `reset` / `:threadId` / `resume` / `delete`）、`/agent/agent/history/ack`、
+  `/agent/agent/turn`、`/agent/agent/interrupt`。
 - 技能：`/agent/skills`（列表 / `draft` / `:name` / `:name/enabled` / `:name/delete`），
-  `/agent/codex/skills` 为同一处理器的别名。
+  `/agent/agent/skills` 为同一处理器的别名。
 - 静态资源：`/agent/attachments/:attachmentId`、`/agent/message-assets/:messageKey/:assetFile`、
   `/agent/local-image`；本机文件定位 `/agent/local-file/reveal`。
 
@@ -71,11 +71,11 @@
 | `plugin` | 恒 `"infinite-canvas"`，标识桥的归属 |
 | `site` | 是否以插件托管形态伺服站点（`Boolean(CANVAS_SITE_DIR)`） |
 | `version` | canvas-agent 版本号（读 bundle 旁 package.json，兜底 `"0.0.0"`） |
-| `dataDir` | 站点 Codex 工作空间绝对路径（`ensureSiteWorkspace().workspacePath`） |
+| `dataDir` | 站点 Agent 工作空间绝对路径（`ensureSiteWorkspace().workspacePath`） |
 | `protocolVersion` | 见「协议版本」 |
 | `hasCanvas` | 当前活跃执行器是否已上报画布快照 |
 | `clients` | 在线画布执行器数量 |
-| `codexBusy` | 是否有 turn 正在执行 |
+| `engineBusy` | 是否有 turn 正在执行 |
 | `conversation` | 站点级对话状态快照 |
 
 ## 快照与状态

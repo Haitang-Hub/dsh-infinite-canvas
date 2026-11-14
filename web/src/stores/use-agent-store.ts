@@ -38,7 +38,7 @@ export type AgentConversationState = {
     sourceClientId?: string;
     error?: string;
 };
-export type AgentPanelTab = "chat" | "setup" | "history" | "skills" | "log";
+export type AgentPanelTab = "chat" | "history" | "skills" | "log";
 export type AgentPanelLayout = { x: number; y: number; width?: number; height?: number };
 
 const PANEL_LAYOUT_KEY = "canvas-agent-panel-layout-v1";
@@ -110,7 +110,7 @@ type AgentStore = {
     pendingTool: AgentPendingToolCall | null;
     pendingApprovals: AgentPendingApproval[];
     setAgentState: (patch: Partial<Omit<AgentStore, "setAgentState" | "connectAgent" | "disconnectAgent" | "addMessage" | "addEventLog" | "clearEventLogs" | "openPanel" | "closePanel" | "togglePanel" | "setCanvasContext">>) => void;
-    openPanel: () => void;
+    openPanel: (tab?: AgentPanelTab) => void;
     closePanel: () => void;
     togglePanel: () => void;
     setCanvasContext: (context: AgentCanvasContext | null) => void;
@@ -150,7 +150,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     activeTurnId: "",
     workspacePath: "",
     loadingThreads: false,
-    activeTab: "setup",
+    activeTab: "chat",
     confirmTools: false,
     permissionMode: typeof window === "undefined" ? "request" : (localStorage.getItem("canvas-agent-permission-mode") as AgentPermissionMode) || "request",
     models: [],
@@ -164,7 +164,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     pendingTool: null,
     pendingApprovals: [],
     setAgentState: (patch) => set(patch),
-    openPanel: () => set({ panelOpen: true, panelMounted: true, panelClosing: false }),
+    openPanel: (tab) => set({ panelOpen: true, panelMounted: true, panelClosing: false, ...(tab ? { activeTab: tab } : {}) }),
     closePanel: () => {
         if (!get().panelMounted || get().panelClosing) return;
         set({ panelOpen: false, panelClosing: true });

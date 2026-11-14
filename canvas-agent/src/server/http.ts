@@ -8,11 +8,12 @@ import { createChannelThread, deleteChannelThread, listChannelThreads, readChann
 import { messageMetadataStore } from "../agent/message-metadata.js";
 import type { AgentAttachment } from "../agent/types.js";
 import { AGENT_PROTOCOL_VERSION, CanvasSession } from "../canvas/session.js";
-import { DEFAULT_PORT, ensureSiteWorkspace, loadConfig, saveConfig, updateSiteWorkspace, VERSION, type CanvasAgentConfig } from "../config.js";
+import { CONFIG_DIR, DEFAULT_PORT, ensureSiteWorkspace, loadConfig, saveConfig, updateSiteWorkspace, VERSION, type CanvasAgentConfig } from "../config.js";
 import { logger } from "../utils/logger.js";
 import { SkillStoreError } from "../skills/store.js";
 import { SkillManager, type SkillScope } from "../skills/sources.js";
 import { registerMcpHttpEndpoint } from "./mcp-http.js";
+import { mountStoreRoutes } from "./store.js";
 
 /** 启动仅监听本机的 Canvas Agent HTTP 服务。 */
 export function startHttpServer() {
@@ -33,13 +34,19 @@ export function startHttpServer() {
     const setActiveThread = (activeThreadId: string, payload: Record<string, unknown> = {}, preserveConversation = false) => {
         const workspace = updateSiteWorkspace(config, { activeThreadId: activeThreadId || undefined });
         if (!preserveConversation) session.activateConversation(activeThreadId, String(payload.sourceClientId || "") || undefined);
-        if (!session.codexBusy && session.codexThreadId !== activeThreadId) session.setCodexState({ threadId: activeThreadId, turnId: "" });
+        if (!session.engineBusy && session.engineThreadId !== activeThreadId) session.setEngineState({ threadId: activeThreadId, turnId: "" });
         session.emitThread("workspace_changed", activeThreadId, { ...payload, activeThreadId, conversation: session.conversationStateSnapshot });
         return workspace;
     };
     const app = express();
     app.disable("x-powered-by");
     app.use(express.json({ limit: "30mb" }));
+    // 兼容旧版网页端：/agent/codex/* 是历史命名（引擎已不是 Codex），内部改写到
+    // /agent/agent/*；新路径与旧路径在同一处理器上，过渡期后可移除本中间件。
+    app.use((req, _res, next) => {
+        if (req.url?.startsWith("/agent/codex/")) req.url = req.url.replace("/agent/codex/", "/agent/agent/");
+        next();
+    });
     app.use((req, res, next) => {
         if (!logger.enabled) return next();
         const startedAt = Date.now();
@@ -93,6 +100,10 @@ export function startHttpServer() {
         version: VERSION,
         dataDir: ensureSiteWorkspace(config).workspacePath,
     }));
+    // 本地文件存储（/store/* + /media/*）：挂在 token 中间件之前、仅本机回环可达——
+    // 画布工程/媒体经此跨上下文共享（DSH iframe、外部浏览器、开发页都读写同一份落盘），
+    // 导演台跨项目导入也依赖这些端点。
+    mountStoreRoutes(app, path.join(CONFIG_DIR, "store"));
     app.use((req, res, next) => {
         if (validToken(req, requestUrl(req, config), config.token)) return next();
         res.status(401).json({ ok: false, error: "invalid token" });
@@ -141,19 +152,19 @@ export function startHttpServer() {
         res.type(path.extname(filePath)).send(await readFile(filePath));
     }));
     app.post("/api/tools", route(async (req, res) => res.json({ ok: true, result: await session.callTool(req.body?.name, req.body?.input || {}) })));
-    app.get("/agent/codex/workspace", (_req, res) => {
+    app.get("/agent/agent/workspace", (_req, res) => {
         const workspace = ensureSiteWorkspace(config);
         res.json({ ok: true, workspace, conversation: session.conversationStateSnapshot });
     });
-    app.get("/agent/codex/models", route(async (_req, res) => res.json({ ok: true, data: channelModels() })));
+    app.get("/agent/agent/models", route(async (_req, res) => res.json({ ok: true, data: channelModels() })));
     // Skill 来源：repo=项目工作区、user=个人目录（可编辑）；system=随安装分发（只读）。
     const skillsHandler = route(async (_req, res) => {
         const { skills, errors } = await skillManager().list();
         res.json({ ok: true, data: skills, errors });
     });
     app.get("/agent/skills", skillsHandler);
-    app.get("/agent/codex/skills", skillsHandler);
-    app.post("/agent/skills/draft", codexMutation(async (req, res) => {
+    app.get("/agent/agent/skills", skillsHandler);
+    app.post("/agent/skills/draft", engineMutation(async (req, res) => {
         const channel = channelModelConfig(req.body?.channel);
         const source = req.body?.source === "canvas" ? "canvas" : "conversation";
         const clientId = String(req.body?.clientId || "");
@@ -177,63 +188,63 @@ export function startHttpServer() {
     app.get("/agent/skills/:name", route(async (req, res) => {
         res.json({ ok: true, data: await skillManager().store(skillScope(req.query.scope)).get(routeParam(req.params.name)) });
     }));
-    app.post("/agent/skills", codexMutation(async (req, res) => {
+    app.post("/agent/skills", engineMutation(async (req, res) => {
         const scope = skillScope(req.body?.scope);
         const data = await skillManager().store(scope).create(req.body);
         session.emitAll("skills_changed", { forceReload: true });
         res.json({ ok: true, data });
     }));
-    app.post("/agent/skills/:name/enabled", codexMutation(async (req, res) => {
+    app.post("/agent/skills/:name/enabled", engineMutation(async (req, res) => {
         const scope = skillScope(req.body?.scope);
         await skillManager().setEnabled(scope, routeParam(req.params.name), Boolean(req.body?.enabled));
         session.emitAll("skills_changed", { forceReload: true });
         res.json({ ok: true });
     }));
-    app.post("/agent/skills/:name/delete", codexMutation(async (req, res) => {
+    app.post("/agent/skills/:name/delete", engineMutation(async (req, res) => {
         const scope = skillScope(req.body?.scope);
         await skillManager().store(scope).delete(routeParam(req.params.name), String(req.body?.expectedRevision || ""));
         session.emitAll("skills_changed", { forceReload: true });
         res.json({ ok: true });
     }));
-    app.post("/agent/skills/:name", codexMutation(async (req, res) => {
+    app.post("/agent/skills/:name", engineMutation(async (req, res) => {
         const scope = skillScope(req.body?.scope);
         const data = await skillManager().store(scope).update(routeParam(req.params.name), req.body);
         session.emitAll("skills_changed", { forceReload: true });
         res.json({ ok: true, data });
     }));
-    app.get("/agent/codex/threads", route(async (req, res) => {
+    app.get("/agent/agent/threads", route(async (req, res) => {
         const workspace = ensureSiteWorkspace(config);
         const data = listChannelThreads().map((thread) => ({ id: thread.id, preview: thread.title, name: thread.title, createdAt: thread.createdAt, updatedAt: thread.updatedAt }));
         res.json({ ok: true, workspace, conversation: session.conversationStateSnapshot, data, nextCursor: null, backwardsCursor: null });
     }));
-    app.post("/agent/codex/threads/new", codexMutation(async (req, res) => {
+    app.post("/agent/agent/threads/new", engineMutation(async (req, res) => {
         const clientId = String(req.body?.clientId || "");
         const thread = createChannelThread();
         session.beginConversation({ threadId: thread.id, sourceClientId: clientId });
         setActiveThread(thread.id, { emptyThread: true, draftThread: true, sourceClientId: clientId });
         res.json({ ok: true, workspace: ensureSiteWorkspace(config), conversation: session.conversationStateSnapshot, messages: [] });
     }));
-    app.post("/agent/codex/threads/reset", codexMutation(async (req, res) => {
+    app.post("/agent/agent/threads/reset", engineMutation(async (req, res) => {
         const clientId = String(req.body?.clientId || "");
         const thread = createChannelThread();
         session.beginConversation({ threadId: thread.id, sourceClientId: clientId });
         setActiveThread(thread.id, { emptyThread: true, draftThread: true, sourceClientId: clientId });
         res.json({ ok: true, workspace: ensureSiteWorkspace(config), conversation: session.conversationStateSnapshot });
     }));
-    app.get("/agent/codex/threads/:threadId", route(async (req, res) => {
+    app.get("/agent/agent/threads/:threadId", route(async (req, res) => {
         const workspace = ensureSiteWorkspace(config);
         const threadId = routeParam(req.params.threadId);
         const thread = readChannelThread(threadId);
         if (!thread) return res.status(404).json({ ok: false, error: "找不到该会话" });
         res.json({ ok: true, workspace, conversation: session.conversationStateSnapshot, thread: { id: thread.id, title: thread.title, createdAt: thread.createdAt, updatedAt: thread.updatedAt }, messages: thread.items, settledTurnIds: [] });
     }));
-    app.post("/agent/codex/history/ack", (req, res) => {
+    app.post("/agent/agent/history/ack", (req, res) => {
         const threadId = String(req.body?.threadId || "");
         const turnIds = Array.isArray(req.body?.turnIds) ? req.body.turnIds.map(String) : [];
-        session.acknowledgeCodexHistory(threadId, turnIds);
+        session.acknowledgeEngineHistory(threadId, turnIds);
         res.json({ ok: true });
     });
-    app.post("/agent/codex/threads/:threadId/resume", codexMutation(async (req, res) => {
+    app.post("/agent/agent/threads/:threadId/resume", engineMutation(async (req, res) => {
         const threadId = routeParam(req.params.threadId);
         const clientId = String(req.body?.clientId || "");
         const thread = readChannelThread(threadId);
@@ -241,14 +252,14 @@ export function startHttpServer() {
         const nextWorkspace = setActiveThread(threadId, { sourceClientId: clientId });
         res.json({ ok: true, workspace: nextWorkspace, conversation: session.conversationStateSnapshot, messages: thread.items, settledTurnIds: [] });
     }));
-    app.post("/agent/codex/threads/:threadId/delete", codexMutation(async (req, res) => {
+    app.post("/agent/agent/threads/:threadId/delete", engineMutation(async (req, res) => {
         const workspace = ensureSiteWorkspace(config);
         const threadId = routeParam(req.params.threadId);
         deleteChannelThread(threadId);
         const nextWorkspace = setActiveThread(workspace.activeThreadId === threadId ? "" : workspace.activeThreadId || "", { sourceClientId: String(req.body?.clientId || "") });
         res.json({ ok: true, workspace: nextWorkspace, conversation: session.conversationStateSnapshot });
     }));
-    app.post("/agent/codex/turn", codexMutation(async (req, res) => {
+    app.post("/agent/agent/turn", engineMutation(async (req, res) => {
         const attachments = Array.isArray(req.body?.attachments) ? (req.body.attachments as AgentAttachment[]) : [];
         const workspace = ensureSiteWorkspace(config);
         const prompt = String(req.body?.prompt || "");
@@ -274,7 +285,7 @@ export function startHttpServer() {
         logger.info("Channel turn accepted", { threadId: req.body?.threadId, model: channel.model, promptLength: prompt.length, attachmentCount: attachments.length });
         session.bindClient(clientId);
         session.markConversationRunning(threadId);
-        session.setCodexState({ busy: true, threadId, turnId: "" });
+        session.setEngineState({ busy: true, threadId, turnId: "" });
         try {
             const attachmentRefs = session.setTurnAttachments(clientId, attachments);
             session.emitThread("chat_message", threadId, {
@@ -327,7 +338,7 @@ export function startHttpServer() {
                     logger.info("Channel turn finished", { threadId, turnId });
                     session.clearTurnAttachments(clientId);
                     if (clientId) session.releaseClient(clientId);
-                    session.setCodexState({ busy: false, threadId, turnId });
+                    session.setEngineState({ busy: false, threadId, turnId });
                     session.finishConversationRun(threadId);
                 },
             });
@@ -335,27 +346,27 @@ export function startHttpServer() {
         } catch (error) {
             await messageMetadataStore.remove(messageId, threadId).catch((metadataError) => logger.warn("Failed to remove rejected message metadata", { clientMessageId: messageId, error: metadataError }));
             session.releaseClient(clientId);
-            session.setCodexState({ busy: false, threadId, turnId: "" });
+            session.setEngineState({ busy: false, threadId, turnId: "" });
             session.finishConversationRun(threadId);
             throw error;
         }
     }));
 
-    /** 将 Codex 写操作串行化，避免多窗口在异步请求期间交叉修改会话。 */
-    function codexMutation(handler: (req: Request, res: Response) => unknown | Promise<unknown>) {
+    /** 将 Agent 写操作串行化，避免多窗口在异步请求期间交叉修改会话。 */
+    function engineMutation(handler: (req: Request, res: Response) => unknown | Promise<unknown>) {
         return route(async (req, res) => {
-            if (!session.beginCodexMutation()) return res.status(409).json({ ok: false, code: "CONVERSATION_BUSY", error: "Codex 正在运行或正在切换会话，请稍后重试", state: session.conversationStateSnapshot });
+            if (!session.beginEngineMutation()) return res.status(409).json({ ok: false, code: "CONVERSATION_BUSY", error: "Agent 正在运行或正在切换会话，请稍后重试", state: session.conversationStateSnapshot });
             try {
                 return await handler(req, res);
             } finally {
-                session.endCodexMutation();
+                session.endEngineMutation();
             }
         });
     }
-    app.post("/agent/codex/approval", route(async (req, res) => {
+    app.post("/agent/agent/approval", route(async (req, res) => {
         return res.status(409).json({ ok: false, error: "渠道引擎没有待审批的请求" });
     }));
-    app.post("/agent/codex/interrupt", route(async (req, res) => {
+    app.post("/agent/agent/interrupt", route(async (req, res) => {
         const ok = interruptChannelTurn(String(req.body?.threadId || ""));
         res.status(ok ? 200 : 409).json({ ok, ...(ok ? {} : { error: "当前没有可停止的任务" }) });
     }));
@@ -419,16 +430,19 @@ function setCors(req: Request, res: Response, url: URL, config: CanvasAgentConfi
     const origin = req.headers.origin;
     res.setHeader("Access-Control-Allow-Origin", origin || "*");
     res.setHeader("Access-Control-Allow-Headers", "content-type,x-canvas-agent-token");
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
     res.setHeader("Access-Control-Allow-Private-Network", "true");
     if (!origin || req.method === "OPTIONS" || url.pathname === "/health" || url.pathname === "/config") return true;
     // 同源请求直接放行：站点自身的 <script type="module" crossorigin>/<link> 会带 Origin 头，
     // 若不放行，插件托管形态（全新数据目录、origins 白名单为空）下站点连自己的 JS/CSS 都会 403。
     const host = req.headers.host;
     if (host && origin === `${req.protocol}://${host}`) return true;
-    // 本机开发页面（vite 5070/5075 等回环 origin）允许经 /bootstrap 零配置拿 token；
+    // 本机开发页面（vite 5075 等回环 origin）允许经 /bootstrap 零配置拿 token；
     // 非回环 origin（公网网站 drive-by 探测回环端口）仍然拒绝。
     if (url.pathname === "/bootstrap" && isLoopbackOrigin(origin)) return true;
+    // 本地文件存储端点：本机回环 origin（导演台 5080/17372 页面跨项目导入、开发页）放行，
+    // 数据只经回环进出且服务仅绑 127.0.0.1；非回环 origin 仍走 token/白名单。
+    if ((url.pathname === "/store" || url.pathname.startsWith("/store/") || url.pathname.startsWith("/media/")) && isLoopbackOrigin(origin)) return true;
     config.origins ||= [];
     if (validToken(req, url, config.token) && !config.origins.includes(origin)) {
         config.origins.push(origin);

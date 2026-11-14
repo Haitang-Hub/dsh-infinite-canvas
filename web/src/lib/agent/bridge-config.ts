@@ -2,8 +2,8 @@
 
 export type BridgeConfig = { url: string; token: string };
 
-/** 独立开发态（vite 5075）的桥默认地址：开发桥端口 17381，与 Desktop 插件桥的 17371 错开。 */
-export const DEFAULT_BRIDGE_URL = "http://127.0.0.1:17381";
+/** 非 http 承载（如 file:// 预览）时回退的本机桥地址：开发态与 Desktop 插件桥统一 17371。 */
+export const DEFAULT_BRIDGE_URL = "http://127.0.0.1:17371";
 
 let bootstrapPromise: Promise<BridgeConfig | null> | null = null;
 
@@ -45,12 +45,13 @@ export function fetchBridgeBootstrap(baseUrl: string): Promise<BridgeConfig | nu
         .then(async (res) => {
             if (!res.ok) return null;
             const data = (await res.json().catch(() => null)) as
-                | { ok?: boolean; url?: string; token?: string; plugin?: string }
+                | { ok?: boolean; url?: string; token?: string; plugin?: string; name?: string }
                 | null;
             // 身份校验：响应自带 plugin 字段时必须是自己家的桥（缺字段视为旧版桥放行），
-            // 防止本机其它服务恰好占着端口时误领别人的 token。
+            // 防止本机其它服务恰好占着端口时误领别人的 token。导演台等邻家桥用 name 标识身份，同样拒收。
             if (!data?.ok || !data.token) return null;
             if (data.plugin && data.plugin !== "infinite-canvas") return null;
+            if (data.name && data.name !== "infinite-canvas") return null;
             const config: BridgeConfig = { url: (data.url || baseUrl).replace(/\/$/, ""), token: data.token };
             persistBridgeConfig(config);
             return config;

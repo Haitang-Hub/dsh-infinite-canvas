@@ -92,7 +92,7 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
     };
     const generateDraft = async (source: SkillDraftSource) => {
         const agent = useAgentStore.getState();
-        if (agent.sending || agent.waiting) return message.warning(t("agent.skillManager.codexBusy"));
+        if (agent.sending || agent.waiting) return message.warning(t("agent.skillManager.engineBusy"));
         if (source === "conversation" && !hasSettledConversation(agent.messages, agent.activeThreadId)) return message.warning(t("agent.skillManager.noConversation"));
         if (source === "canvas" && !agent.canvasContext) return message.warning(t("agent.skillManager.noCanvas"));
         if (!clientId) return message.warning(t("agent.skillManager.connecting"));
@@ -239,28 +239,28 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
             if (connectionIsCurrent(connectionRevision)) setBusySkill("");
         }
     };
-    const codexBusy = sending || waiting;
+    const engineBusy = sending || waiting;
     const createMenu: MenuProps = {
         items: [
             {
                 key: "conversation",
                 icon: <MessageSquareText className="size-4" />,
-                disabled: codexBusy || !hasConversation,
+                disabled: engineBusy || !hasConversation,
                 label: (
                     <div className="py-0.5">
                         <div className="text-sm">{t("agent.skillManager.fromConversation")}</div>
-                        <div className="mt-0.5 text-xs" style={{ color: theme.node.muted }}>{t(codexBusy ? "agent.skillManager.availableAfterRun" : hasConversation ? "agent.skillManager.conversationDescription" : activeThreadId ? "agent.skillManager.noCompletedContent" : "agent.skillManager.startConversation")}</div>
+                        <div className="mt-0.5 text-xs" style={{ color: theme.node.muted }}>{t(engineBusy ? "agent.skillManager.availableAfterRun" : hasConversation ? "agent.skillManager.conversationDescription" : activeThreadId ? "agent.skillManager.noCompletedContent" : "agent.skillManager.startConversation")}</div>
                     </div>
                 ),
             },
             {
                 key: "canvas",
                 icon: <Workflow className="size-4" />,
-                disabled: codexBusy || !hasCanvas,
+                disabled: engineBusy || !hasCanvas,
                 label: (
                     <div className="py-0.5">
                         <div className="text-sm">{t("agent.skillManager.fromCanvas")}</div>
-                        <div className="mt-0.5 text-xs" style={{ color: theme.node.muted }}>{t(codexBusy ? "agent.skillManager.availableAfterRun" : hasCanvas ? "agent.skillManager.canvasDescription" : "agent.skillManager.canvasUnavailable")}</div>
+                        <div className="mt-0.5 text-xs" style={{ color: theme.node.muted }}>{t(engineBusy ? "agent.skillManager.availableAfterRun" : hasCanvas ? "agent.skillManager.canvasDescription" : "agent.skillManager.canvasUnavailable")}</div>
                     </div>
                 ),
             },

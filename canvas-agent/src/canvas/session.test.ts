@@ -3,7 +3,7 @@ import type { ServerResponse } from "node:http";
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { CanvasSession } from "./session.js";
+import { AGENT_PROTOCOL_VERSION, CanvasSession } from "./session.js";
 
 test("MCP 读取当前激活网页的画布", async (t) => {
     const session = new CanvasSession();
@@ -213,28 +213,28 @@ test("shared thread events are broadcast with the active thread id", (t) => {
     assert.deepEqual(second.event("workspace_changed"), { activeThreadId: "thread-2", threadId: "thread-2" });
 });
 
-test("new clients receive the current Codex state and later updates", (t) => {
+test("new clients receive the current Agent state and later updates", (t) => {
     const session = new CanvasSession("thread-2");
-    session.setCodexState({ busy: true, threadId: "thread-2", turnId: "turn-1" });
-    session.trackCodexEvent("codex_approval", { requestId: "approval-1", threadId: "thread-2" });
+    session.setEngineState({ busy: true, threadId: "thread-2", turnId: "turn-1" });
+    session.trackEngineEvent("engine_approval", { requestId: "approval-1", threadId: "thread-2" });
     const client = connect(session, "first", "thread-2");
     t.after(() => client.close());
 
     const hello = client.event("hello");
-    assert.equal(field(hello, "protocolVersion"), 7);
+    assert.equal(field(hello, "protocolVersion"), AGENT_PROTOCOL_VERSION);
     assert.deepEqual(field(hello, "workspace"), { activeThreadId: "thread-2" });
     assert.deepEqual(field(hello, "conversation"), { revision: 1, conversationId: "thread-2", threadId: "thread-2", status: "ready", mcpStatuses: {} });
-    assert.deepEqual(field(hello, "codex"), { busy: true, threadId: "thread-2", turnId: "turn-1" });
+    assert.deepEqual(field(hello, "engine"), { busy: true, threadId: "thread-2", turnId: "turn-1" });
     assert.deepEqual(field(hello, "pendingApprovals"), [{ requestId: "approval-1", threadId: "thread-2" }]);
 
-    session.trackCodexEvent("codex_approval_resolved", { requestId: "approval-1" });
-    assert.deepEqual(session.codexPendingApprovals, []);
-    session.trackCodexEvent("codex_approval", { requestId: "approval-2", threadId: "thread-2" });
-    session.setCodexState({ busy: false });
-    assert.deepEqual(session.codexPendingApprovals, [{ requestId: "approval-2", threadId: "thread-2" }]);
-    session.trackCodexEvent("agent_error", { message: "app-server exited" });
-    assert.deepEqual(session.codexPendingApprovals, []);
-    assert.deepEqual(client.event("codex_state"), { busy: false, threadId: "thread-2", turnId: "turn-1" });
+    session.trackEngineEvent("engine_approval_resolved", { requestId: "approval-1" });
+    assert.deepEqual(session.enginePendingApprovals, []);
+    session.trackEngineEvent("engine_approval", { requestId: "approval-2", threadId: "thread-2" });
+    session.setEngineState({ busy: false });
+    assert.deepEqual(session.enginePendingApprovals, [{ requestId: "approval-2", threadId: "thread-2" }]);
+    session.trackEngineEvent("agent_error", { message: "app-server exited" });
+    assert.deepEqual(session.enginePendingApprovals, []);
+    assert.deepEqual(client.event("engine_state"), { busy: false, threadId: "thread-2", turnId: "turn-1" });
 });
 
 test("对话 revision 单调递增且 MCP 全部进入终态前保持 preparing", () => {
@@ -281,15 +281,15 @@ test("可选 MCP 失败进入 warning，画布 MCP 失败进入 failed", () => {
     assert.match(missing.error || "", /Infinite Canvas MCP/);
 });
 
-test("Codex 写操作在多窗口之间互斥且不能与运行 turn 并发", () => {
+test("Agent 写操作在多窗口之间互斥且不能与运行 turn 并发", () => {
     const session = new CanvasSession();
-    assert.equal(session.beginCodexMutation(), true);
-    assert.equal(session.beginCodexMutation(), false);
-    session.endCodexMutation();
-    assert.equal(session.beginCodexMutation(), true);
-    session.endCodexMutation();
-    session.setCodexState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
-    assert.equal(session.beginCodexMutation(), false);
+    assert.equal(session.beginEngineMutation(), true);
+    assert.equal(session.beginEngineMutation(), false);
+    session.endEngineMutation();
+    assert.equal(session.beginEngineMutation(), true);
+    session.endEngineMutation();
+    session.setEngineState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
+    assert.equal(session.beginEngineMutation(), false);
 });
 
 test("Skill draft generation broadcasts shared busy state and restores the previous thread", (t) => {
@@ -300,32 +300,32 @@ test("Skill draft generation broadcasts shared busy state and restores the previ
         first.close();
         second.close();
     });
-    session.setCodexState({ threadId: "thread-1", turnId: "turn-previous" });
-    const previous = session.codexStateSnapshot;
+    session.setEngineState({ threadId: "thread-1", turnId: "turn-previous" });
+    const previous = session.engineStateSnapshot;
 
-    assert.equal(session.beginCodexMutation(), true);
-    session.setCodexState({ busy: true, threadId: previous.threadId, turnId: "" }, { preserveReplay: true });
-    assert.deepEqual(first.events("codex_state").at(-1), { busy: true, threadId: "thread-1", turnId: "" });
-    assert.deepEqual(second.events("codex_state").at(-1), { busy: true, threadId: "thread-1", turnId: "" });
-    assert.equal(session.beginCodexMutation(), false);
+    assert.equal(session.beginEngineMutation(), true);
+    session.setEngineState({ busy: true, threadId: previous.threadId, turnId: "" }, { preserveReplay: true });
+    assert.deepEqual(first.events("engine_state").at(-1), { busy: true, threadId: "thread-1", turnId: "" });
+    assert.deepEqual(second.events("engine_state").at(-1), { busy: true, threadId: "thread-1", turnId: "" });
+    assert.equal(session.beginEngineMutation(), false);
 
-    session.setCodexState(previous, { preserveReplay: true });
-    session.endCodexMutation();
-    assert.deepEqual(first.events("codex_state").at(-1), previous);
-    assert.deepEqual(second.events("codex_state").at(-1), previous);
-    assert.equal(session.beginCodexMutation(), true);
-    session.endCodexMutation();
+    session.setEngineState(previous, { preserveReplay: true });
+    session.endEngineMutation();
+    assert.deepEqual(first.events("engine_state").at(-1), previous);
+    assert.deepEqual(second.events("engine_state").at(-1), previous);
+    assert.equal(session.beginEngineMutation(), true);
+    session.endEngineMutation();
 });
 
 test("Skill draft busy state preserves the previous turn replay until history acknowledges it", (t) => {
     const session = new CanvasSession();
-    session.setCodexState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
+    session.setEngineState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
     session.emitThread("agent_event", "thread-1", { turnId: "turn-1", type: "item.updated", item: { id: "assistant-1", type: "agent_message", text: "回答" } });
-    session.setCodexState({ busy: false });
-    const previous = session.codexStateSnapshot;
+    session.setEngineState({ busy: false });
+    const previous = session.engineStateSnapshot;
 
-    session.setCodexState({ busy: true, threadId: "thread-1", turnId: "" }, { preserveReplay: true });
-    session.setCodexState(previous, { preserveReplay: true });
+    session.setEngineState({ busy: true, threadId: "thread-1", turnId: "" }, { preserveReplay: true });
+    session.setEngineState(previous, { preserveReplay: true });
 
     const client = connect(session, "first", "thread-1");
     t.after(() => client.close());
@@ -387,7 +387,7 @@ test("a disconnected bound client never falls back and can resume with the same 
 
 test("新连接会回放当前运行 turn 的最新事件快照", (t) => {
     const session = new CanvasSession();
-    session.setCodexState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
+    session.setEngineState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
     session.emitThread("chat_message", "thread-1", { turnId: "turn-1", message: { id: "thread-1:turn-1:synthetic:user", itemId: "synthetic:user", clientMessageId: "local-message-1", role: "user", text: "问题" } });
     session.emitThread("agent_event", "thread-1", { turnId: "turn-1", type: "item.updated", item: { id: "reasoning-1", type: "reasoning", text: "分析中" } });
 
@@ -400,7 +400,7 @@ test("新连接会回放当前运行 turn 的最新事件快照", (t) => {
 
 test("同一 item 的多次增量只回放最新内容", (t) => {
     const session = new CanvasSession();
-    session.setCodexState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
+    session.setEngineState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
     session.emitThread("agent_event", "thread-1", { turnId: "turn-1", type: "item.updated", item: { id: "assistant-1", type: "agent_message", text: "第一段" } });
     session.emitThread("agent_event", "thread-1", { turnId: "turn-1", type: "item.updated", item: { id: "assistant-1", type: "agent_message", text: "第一段和第二段" } });
 
@@ -414,7 +414,7 @@ test("同一 item 的多次增量只回放最新内容", (t) => {
 
 test("增量事件重放时转换为完整文本快照", (t) => {
     const session = new CanvasSession();
-    session.setCodexState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
+    session.setEngineState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
     session.emitThread("agent_event", "thread-1", { turnId: "turn-1", type: "item.updated", item: { id: "assistant-1", type: "agent_message", delta: "第一段" } });
     session.emitThread("agent_event", "thread-1", { turnId: "turn-1", type: "item.updated", item: { id: "assistant-1", type: "agent_message", delta: "第二段" } });
 
@@ -426,7 +426,7 @@ test("增量事件重放时转换为完整文本快照", (t) => {
 
 test("并行 item 更新后重放仍保留开始顺序和命令字段", (t) => {
     const session = new CanvasSession();
-    session.setCodexState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
+    session.setEngineState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
     session.emitThread("agent_event", "thread-1", { turnId: "turn-1", type: "item.started", item: { id: "first", type: "command_execution", command: "first", cwd: "D:\\infinite-canvas" } });
     session.emitThread("agent_event", "thread-1", { turnId: "turn-1", type: "item.started", item: { id: "second", type: "command_execution", command: "second" } });
     session.emitThread("agent_event", "thread-1", { turnId: "turn-1", type: "item.updated", item: { id: "first", type: "command_execution", delta: "output" } });
@@ -441,7 +441,7 @@ test("并行 item 更新后重放仍保留开始顺序和命令字段", (t) => {
 
 test("长 turn 不会淘汰仍在更新的活动条目快照", (t) => {
     const session = new CanvasSession();
-    session.setCodexState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
+    session.setEngineState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
     session.emitThread("agent_event", "thread-1", { turnId: "turn-1", type: "item.started", item: { id: "active-item", type: "command_execution", command: "long-running" } });
     for (let index = 0; index < 260; index += 1) {
         session.emitThread("agent_event", "thread-1", { turnId: "turn-1", type: "item.completed", item: { id: `completed-${index}`, type: "command_execution", command: `command-${index}` } });
@@ -454,7 +454,7 @@ test("长 turn 不会淘汰仍在更新的活动条目快照", (t) => {
 
 test("内置生图事件会回放展示但标记为不可重复执行", (t) => {
     const session = new CanvasSession();
-    session.setCodexState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
+    session.setEngineState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
     session.emitThread("agent_event", "thread-1", { turnId: "turn-1", type: "item.completed", item: { id: "image-1", type: "image_generation", savedPath: "D:/image.png" } });
 
     const client = connect(session, "first", "thread-1");
@@ -471,15 +471,15 @@ test("内置生图事件会回放展示但标记为不可重复执行", (t) => {
 
 test("turn 结束后保留实时快照，直到网页确认权威历史", (t) => {
     const session = new CanvasSession();
-    session.setCodexState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
+    session.setEngineState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
     session.emitThread("agent_event", "thread-1", { turnId: "turn-1", type: "item.updated", item: { id: "assistant-1", type: "agent_message", text: "回答" } });
-    session.setCodexState({ busy: false });
+    session.setEngineState({ busy: false });
 
     const client = connect(session, "first", "thread-1");
     t.after(() => client.close());
     assert.equal(client.events("agent_event").length, 1);
 
-    session.acknowledgeCodexHistory("thread-1", ["turn-1"]);
+    session.acknowledgeEngineHistory("thread-1", ["turn-1"]);
     const next = connect(session, "second", "thread-1");
     t.after(() => next.close());
     assert.deepEqual(next.events("agent_event"), []);
@@ -487,10 +487,10 @@ test("turn 结束后保留实时快照，直到网页确认权威历史", (t) =>
 
 test("开始下一 turn 时只回放当前 turn 的事件", (t) => {
     const session = new CanvasSession();
-    session.setCodexState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
+    session.setEngineState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
     session.emitThread("agent_event", "thread-1", { turnId: "turn-1", type: "item.updated", item: { id: "assistant", type: "agent_message", text: "第一轮" } });
-    session.setCodexState({ busy: false, turnId: "turn-1" });
-    session.setCodexState({ busy: true, turnId: "turn-2" });
+    session.setEngineState({ busy: false, turnId: "turn-1" });
+    session.setEngineState({ busy: true, turnId: "turn-2" });
     session.emitThread("agent_event", "thread-1", { turnId: "turn-2", type: "item.updated", item: { id: "assistant", type: "agent_message", text: "第二轮" } });
 
     const client = connect(session, "first", "thread-1");
@@ -502,9 +502,9 @@ test("开始下一 turn 时只回放当前 turn 的事件", (t) => {
 
 test("同一用户消息从 pending 绑定 turn 后只回放最终版本", (t) => {
     const session = new CanvasSession();
-    session.setCodexState({ busy: true, threadId: "thread-1", turnId: "" });
+    session.setEngineState({ busy: true, threadId: "thread-1", turnId: "" });
     session.emitThread("chat_message", "thread-1", { message: { id: "pending", itemId: "synthetic:user", clientMessageId: "message-1", role: "user", text: "问题" } });
-    session.setCodexState({ turnId: "turn-1" });
+    session.setEngineState({ turnId: "turn-1" });
     session.emitThread("chat_message", "thread-1", { turnId: "turn-1", message: { id: "final", itemId: "synthetic:user", clientMessageId: "message-1", role: "user", text: "问题" } });
 
     const client = connect(session, "first", "thread-1");
@@ -519,11 +519,11 @@ test("同一用户消息从 pending 绑定 turn 后只回放最终版本", (t) =
 
 test("切换活动线程会清除上一线程的实时快照", (t) => {
     const session = new CanvasSession();
-    session.setCodexState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
+    session.setEngineState({ busy: true, threadId: "thread-1", turnId: "turn-1" });
     session.emitThread("agent_event", "thread-1", { turnId: "turn-1", type: "item.updated", item: { id: "assistant-1", type: "agent_message", text: "回答" } });
-    session.setCodexState({ busy: false, threadId: "thread-1", turnId: "turn-1" });
-    session.setCodexState({ threadId: "thread-2", turnId: "" });
-    session.setCodexState({ threadId: "thread-1", turnId: "" });
+    session.setEngineState({ busy: false, threadId: "thread-1", turnId: "turn-1" });
+    session.setEngineState({ threadId: "thread-2", turnId: "" });
+    session.setEngineState({ threadId: "thread-1", turnId: "" });
 
     const client = connect(session, "first", "thread-1");
     t.after(() => client.close());

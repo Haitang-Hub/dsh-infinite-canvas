@@ -7,7 +7,7 @@
         "dev": "vite --host 0.0.0.0",
         "build": "vite build",
         "typecheck": "tsc --noEmit",
-        "start": "vite preview --host 0.0.0.0 --port 5070",
+        "start": "vite preview --host 0.0.0.0 --port 5075",
         "format": "prettier --write .",
         "format:check": "prettier --check ."
     },

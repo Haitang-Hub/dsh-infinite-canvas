@@ -81,7 +81,7 @@ export class SkillStore {
         this.createParent = Boolean(options.createParent);
     }
 
-    /** 判断 Codex 返回的绝对路径是否属于本 Store 的标准 Skill 入口。 */
+    /** 判断 Agent 返回的绝对路径是否属于本 Store 的标准 Skill 入口。 */
     isManagedPath(filePath: string) {
         if (!path.isAbsolute(filePath)) return false;
         const relative = path.relative(this.skillsPath, path.resolve(filePath));

@@ -14,8 +14,10 @@
  */
 
 import { spawn } from 'node:child_process'
+import http from 'node:http'
 import { randomUUID } from 'node:crypto'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import Schema from '@deepseek-ai/schemastery'
@@ -250,36 +252,105 @@ async function foldHarnessStream(stream) {
   return { content, toolCalls, usage }
 }
 
-function registerHarnessModelRoutes(ctx) {
+/**
+ * Harness 模型调用的两个核心载荷（模型列表 / 代发对话），两处共用：
+ *   1. 宿主连接 fetch 路由（/api/infinite-canvas.harness-*，面板 iframe 同源访问）；
+ *   2. 本插件自起的回环 HTTP 中继（canvas-agent 桥进程直连）。
+ * 桌面端 shell 的 window.location.origin 是 dsh-app:// 自定义协议，桥进程的 node
+ * fetch 无法访问；中继让桥经 http://127.0.0.1:<随机端口>/h/<token>/api/... 调到
+ * 本进程内的 llm 服务（密钥不出 harness 进程）。
+ */
+function createHarnessHandlers(ctx) {
   const llm = typeof ctx.get === 'function' ? ctx.get('llm') : undefined
   const available = () => llm && typeof llm.listProviders === 'function' && typeof llm.listModels === 'function' && typeof llm.stream === 'function'
 
+  async function modelsPayload() {
+    if (!available()) {
+      return { status: 503, body: { ok: false, error: '宿主 llm 服务不可用（需要 DeepSeek Harness 0.2）' } }
+    }
+    try {
+      const groups = []
+      for (const provider of llm.listProviders()) {
+        const models = await llm.listModels(provider.id)
+        groups.push({
+          provider: provider.id,
+          providerName: provider.name || provider.id,
+          models: models.map((model) => ({
+            id: model.id,
+            name: model.name || model.id,
+            description: typeof model.description === 'string' ? model.description : '',
+          })),
+        })
+      }
+      return { status: 200, body: { ok: true, groups } }
+    } catch (error) {
+      return { status: 500, body: { ok: false, error: error instanceof Error ? error.message : String(error) } }
+    }
+  }
+
+  async function chatPayload(body) {
+    if (!available()) {
+      return { status: 503, body: { ok: false, error: '宿主 llm 服务不可用（需要 DeepSeek Harness 0.2）' } }
+    }
+    const provider = String(body?.provider || '').trim()
+    const model = String(body?.model || '').trim()
+    if (!provider || !model) return { status: 400, body: { ok: false, error: '缺少 provider/model' } }
+    if (!llm.listProviders().some((entry) => entry.id === provider)) {
+      return { status: 400, body: { ok: false, error: `provider ${provider} 未在宿主注册` } }
+    }
+    const entries = Array.isArray(body?.messages) ? body.messages : []
+    if (entries.length > HARNESS_CHAT_MAX_MESSAGES) {
+      return { status: 413, body: { ok: false, error: `消息过多（>${HARNESS_CHAT_MAX_MESSAGES}）` } }
+    }
+    if (JSON.stringify(entries).length > HARNESS_CHAT_MAX_CHARS) {
+      return { status: 413, body: { ok: false, error: '消息体过大' } }
+    }
+    let requestInput
+    try {
+      requestInput = toHarnessRequest(entries, provider, model)
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: error instanceof Error ? error.message : String(error) } }
+    }
+    const tools = (Array.isArray(body?.tools) ? body.tools : [])
+      .map((tool) => tool?.function)
+      .filter((fn) => fn && typeof fn.name === 'string')
+      .map((fn) => ({ name: fn.name, description: String(fn.description || ''), parameters: fn.parameters && typeof fn.parameters === 'object' ? fn.parameters : { type: 'object', properties: {} } }))
+    const temperature = typeof body?.temperature === 'number' ? body.temperature : undefined
+    try {
+      const result = await foldHarnessStream(llm.stream({
+        provider,
+        model,
+        ...(requestInput.system ? { system: requestInput.system } : {}),
+        messages: requestInput.messages,
+        ...(tools.length ? { tools } : {}),
+        ...(temperature !== undefined ? { temperature } : {}),
+        signal: AbortSignal.timeout(HARNESS_CHAT_TIMEOUT_MS),
+      }))
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          content: result.content,
+          toolCalls: result.toolCalls,
+          ...(result.usage ? { usage: result.usage } : {}),
+        },
+      }
+    } catch (error) {
+      return { status: 502, body: { ok: false, error: error instanceof Error ? error.message : String(error) } }
+    }
+  }
+
+  return { modelsPayload, chatPayload }
+}
+
+function registerHarnessModelRoutes(ctx, handlers) {
   ctx.effect(() => ctx.connection.fetch.register({
     path: '/api/infinite-canvas.harness-models',
     methods: ['GET'],
     requestBody: 'buffered',
     async fetch() {
-      if (!available()) {
-        return Response.json({ ok: false, error: '宿主 llm 服务不可用（需要 DeepSeek Harness 0.2）' }, { status: 503 })
-      }
-      try {
-        const groups = []
-        for (const provider of llm.listProviders()) {
-          const models = await llm.listModels(provider.id)
-          groups.push({
-            provider: provider.id,
-            providerName: provider.name || provider.id,
-            models: models.map((model) => ({
-              id: model.id,
-              name: model.name || model.id,
-              description: typeof model.description === 'string' ? model.description : '',
-            })),
-          })
-        }
-        return Response.json({ ok: true, groups }, { headers: { 'Cache-Control': 'no-store' } })
-      } catch (error) {
-        return Response.json({ ok: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 })
-      }
+      const payload = await handlers.modelsPayload()
+      return Response.json(payload.body, { status: payload.status, headers: { 'Cache-Control': 'no-store' } })
     },
   }), 'infinite-canvas: harness-models route')
 
@@ -288,60 +359,64 @@ function registerHarnessModelRoutes(ctx) {
     methods: ['POST'],
     requestBody: 'buffered',
     async fetch(request) {
-      if (!available()) {
-        return Response.json({ ok: false, error: '宿主 llm 服务不可用（需要 DeepSeek Harness 0.2）' }, { status: 503 })
-      }
       let body
       try {
         body = await request.json()
       } catch {
         return Response.json({ ok: false, error: '请求体不是合法 JSON' }, { status: 400 })
       }
-      const provider = String(body?.provider || '').trim()
-      const model = String(body?.model || '').trim()
-      if (!provider || !model) return Response.json({ ok: false, error: '缺少 provider/model' }, { status: 400 })
-      if (!llm.listProviders().some((entry) => entry.id === provider)) {
-        return Response.json({ ok: false, error: `provider ${provider} 未在宿主注册` }, { status: 400 })
-      }
-      const entries = Array.isArray(body?.messages) ? body.messages : []
-      if (entries.length > HARNESS_CHAT_MAX_MESSAGES) {
-        return Response.json({ ok: false, error: `消息过多（>${HARNESS_CHAT_MAX_MESSAGES}）` }, { status: 413 })
-      }
-      if (JSON.stringify(entries).length > HARNESS_CHAT_MAX_CHARS) {
-        return Response.json({ ok: false, error: '消息体过大' }, { status: 413 })
-      }
-      let requestInput
-      try {
-        requestInput = toHarnessRequest(entries, provider, model)
-      } catch (error) {
-        return Response.json({ ok: false, error: error instanceof Error ? error.message : String(error) }, { status: 400 })
-      }
-      const tools = (Array.isArray(body?.tools) ? body.tools : [])
-        .map((tool) => tool?.function)
-        .filter((fn) => fn && typeof fn.name === 'string')
-        .map((fn) => ({ name: fn.name, description: String(fn.description || ''), parameters: fn.parameters && typeof fn.parameters === 'object' ? fn.parameters : { type: 'object', properties: {} } }))
-      const temperature = typeof body?.temperature === 'number' ? body.temperature : undefined
-      try {
-        const result = await foldHarnessStream(llm.stream({
-          provider,
-          model,
-          ...(requestInput.system ? { system: requestInput.system } : {}),
-          messages: requestInput.messages,
-          ...(tools.length ? { tools } : {}),
-          ...(temperature !== undefined ? { temperature } : {}),
-          signal: AbortSignal.timeout(HARNESS_CHAT_TIMEOUT_MS),
-        }))
-        return Response.json({
-          ok: true,
-          content: result.content,
-          toolCalls: result.toolCalls,
-          ...(result.usage ? { usage: result.usage } : {}),
-        })
-      } catch (error) {
-        return Response.json({ ok: false, error: error instanceof Error ? error.message : String(error) }, { status: 502 })
-      }
+      const payload = await handlers.chatPayload(body)
+      return Response.json(payload.body, { status: payload.status })
     },
   }), 'infinite-canvas: harness-chat route')
+}
+
+/**
+ * 回环 harness 中继：canvas-agent（独立 node 进程）直连本插件的 harness 代理端点。
+ * 仅绑 127.0.0.1，路径带随机 token（/h/<token>/api/...）防本机其它进程误用；
+ * origin 经 bridge-info 下发给面板客户端，由客户端回传给 iframe 拼进渠道载荷。
+ */
+function startHarnessRelayServer(handlers, onListening) {
+  const token = randomUUID().replace(/-/g, '')
+  const server = http.createServer((req, res) => {
+    const reply = (status, body) => {
+      res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
+      res.end(JSON.stringify(body))
+    }
+    const url = new URL(req.url || '/', 'http://127.0.0.1')
+    if (!url.pathname.startsWith(`/h/${token}/api/`)) {
+      reply(404, { ok: false, error: 'not found' })
+      return
+    }
+    if (req.method === 'GET' && url.pathname.endsWith('.harness-models')) {
+      handlers.modelsPayload().then(
+        (payload) => reply(payload.status, payload.body),
+        (error) => reply(500, { ok: false, error: error instanceof Error ? error.message : String(error) }),
+      )
+      return
+    }
+    if (req.method === 'POST' && url.pathname.endsWith('.harness-chat')) {
+      const chunks = []
+      req.on('data', (chunk) => chunks.push(chunk))
+      req.on('end', () => {
+        let body
+        try {
+          body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+        } catch {
+          reply(400, { ok: false, error: '请求体不是合法 JSON' })
+          return
+        }
+        handlers.chatPayload(body).then(
+          (payload) => reply(payload.status, payload.body),
+          (error) => reply(500, { ok: false, error: error instanceof Error ? error.message : String(error) }),
+        )
+      })
+      return
+    }
+    reply(404, { ok: false, error: 'not found' })
+  })
+  server.listen(0, '127.0.0.1', onListening)
+  return { server, token }
 }
 
 export async function apply(ctx, config) {
@@ -357,18 +432,51 @@ export async function apply(ctx, config) {
     restarts: 0,
   }
 
-  // 共享设置（本项目自己的设置页）：这里只取本项目的运行期开关。
+  // 共享设置（本项目自己的设置页）：这里只取本项目的运行期开关与连接 token。
   // 读取失败按默认开启处理，设置文件损坏不应该拦住桥的启动。
   const settingsPath = sharedSettingsPath(config.root)
   let autoStart = true
   let autoRestart = true
+  // 连接 token：设置里留空 = 自动（桥自己生成并经 /bootstrap 下发）；填写则 spawn 时注入固定值。
+  let bridgeToken = ''
   try {
     const shared = await readSharedSettings(config.root)
     const switches = projectSwitches(shared, 'infinite-canvas')
     autoStart = switches.autoStart
     autoRestart = switches.autoRestart
+    bridgeToken = String(shared.projects?.['infinite-canvas']?.bridgeToken || '').trim()
   } catch (error) {
     ctx.logger.warn('infinite-canvas: read shared settings failed: %s', error instanceof Error ? error.message : String(error))
+  }
+
+  /** 读桥当前生效的 token：先看桥落盘的配置文件，再经 /bootstrap 领（覆盖复用外部桥的场景）。 */
+  async function discoverBridgeToken() {
+    try {
+      const raw = await readFile(join(config.root, 'canvas-agent.json'), 'utf8')
+      const token = String(JSON.parse(raw)?.token || '').trim()
+      if (token) return token
+    } catch { /* 桥还没写过配置文件 */ }
+    try {
+      const response = await fetch(`${baseUrl}/bootstrap`, { signal: AbortSignal.timeout(2000) })
+      const payload = await response.json().catch(() => null)
+      return String(payload?.token || '').trim()
+    } catch { return '' }
+  }
+
+  /** 设置里未固定 token 时，把桥当前 token 回填到共享设置，设置页打开即见（默认填充）。 */
+  async function fillBridgeTokenIfEmpty() {
+    if (bridgeToken) return
+    const token = await discoverBridgeToken()
+    if (!token) return
+    bridgeToken = token
+    try {
+      await updateSharedSettings(config.root, {
+        projects: { 'infinite-canvas': { bridgeToken: token, updatedAt: Date.now() } },
+      })
+      ctx.logger.info('infinite-canvas: bridge token filled into shared settings')
+    } catch (error) {
+      ctx.logger.warn('infinite-canvas: bridge token fill failed: %s', error instanceof Error ? error.message : String(error))
+    }
   }
 
   /** 面板读取的稳定快照：只含可 JSON 化的状态，不含子进程句柄。 */
@@ -380,6 +488,8 @@ export async function apply(ctx, config) {
     restarts: state.restarts,
     autoStart,
     autoRestart,
+    // 回环 harness 中继 origin（node 进程可直连；桌面端 shell origin 是 dsh-app:// 不可用）
+    ...(harnessRelayOrigin ? { harnessRelayOrigin } : {}),
     ...(state.error ? { error: state.error } : {}),
   })
 
@@ -405,6 +515,9 @@ export async function apply(ctx, config) {
         CANVAS_SITE_DIR: siteDir,
         // canvas-agent 读 PORT 决定监听端口。
         PORT: String(config.port),
+        // 设置里固定了连接 token 时注入（CANVAS_AGENT_TOKEN 优先于桥落盘的 token；
+        // scrubbedEnv 会先清掉环境里的 *TOKEN*，这里再写入我们自己的）。
+        ...(bridgeToken ? { CANVAS_AGENT_TOKEN: bridgeToken } : {}),
       },
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
@@ -431,6 +544,7 @@ export async function apply(ctx, config) {
       await waitForHealth(`${baseUrl}/health`, config.startupTimeoutMs, undefined)
       state.ready = true
       state.error = undefined
+      await fillBridgeTokenIfEmpty()
       return true
     } catch (error) {
       const cause = spawnError ? `spawn failed: ${spawnError.message}` : error.message
@@ -467,6 +581,7 @@ export async function apply(ctx, config) {
         if (!state.ready) ctx.logger.info('infinite-canvas: reusing healthy bridge; url=%s', baseUrl)
         state.ready = true
         state.error = undefined
+        await fillBridgeTokenIfEmpty()
         return
       }
       state.ready = false
@@ -533,6 +648,8 @@ export async function apply(ctx, config) {
     const startTurnedOff = autoStart && !nextStart
     autoStart = nextStart
     autoRestart = nextRestart
+    // token 修改在下次 spawn（重启服务）时生效；清空则回落为桥自动 token。
+    bridgeToken = String(settings?.projects?.['infinite-canvas']?.bridgeToken || '').trim()
     if (startTurnedOff) {
       if (state.child) {
         try { state.child.kill() } catch { /* 已经退出 */ }
@@ -577,7 +694,15 @@ export async function apply(ctx, config) {
     },
   }))
 
-  registerHarnessModelRoutes(ctx)
+  // Harness 模型接入：宿主连接路由（面板 iframe 用）+ 回环中继（canvas-agent 桥进程用）。
+  const harnessHandlers = createHarnessHandlers(ctx)
+  registerHarnessModelRoutes(ctx, harnessHandlers)
+  let harnessRelayOrigin = ''
+  const relay = startHarnessRelayServer(harnessHandlers, () => {
+    harnessRelayOrigin = `http://127.0.0.1:${relay.server.address().port}/h/${relay.token}`
+    ctx.logger.info('infinite-canvas: harness relay at %s', harnessRelayOrigin)
+  })
+  ctx.effect(() => () => relay.server.close())
 
   await ensureBridge(false, 'init')
 

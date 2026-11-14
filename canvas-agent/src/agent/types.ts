@@ -10,11 +10,11 @@ export type AgentAttachmentDisplay = { id: string; name: string; type?: string; 
 /** 用户消息引用的画布素材。 */
 export type AgentCanvasReference = { nodeId: string; label: string; title: string; kind: "image" | "video" | "audio" | "text"; previewUrl?: string; text?: string };
 
-/** 用户消息调用的 Codex Skill。 */
+/** 用户消息调用的 Agent Skill。 */
 export type AgentSkillReference = { name: string; path: string; displayName?: string };
 
-/** 独立于 Codex 原生线程历史保存的用户消息展示元数据。 */
+/** 独立于 Agent 原生线程历史保存的用户消息展示元数据。 */
 export type AgentMessageMetadata = { attachments?: AgentAttachmentDisplay[]; canvasReferences?: AgentCanvasReference[]; skill?: AgentSkillReference };
 
-/** Codex 文件、命令和网络权限模式。 */
+/** Agent 文件、命令和网络权限模式。 */
 export type AgentPermissionMode = "request" | "automatic" | "full";

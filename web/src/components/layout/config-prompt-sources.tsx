@@ -1,9 +1,10 @@
 import { App, Button, Select, Switch, Tag } from "antd";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Eye, Library, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { PromptGithubPickerModal } from "./prompt-github-picker-modal";
 import { PromptSourceEditorDrawer } from "./prompt-source-editor-drawer";
 import { PromptSourceContentModal } from "./prompt-source-content-modal";
 import { fetchPromptSourceStatuses, refreshAllSources, refreshSource } from "@/services/api/prompts";
@@ -26,6 +27,7 @@ export function ConfigPromptSources() {
     const statusQuery = useQuery({ queryKey: STATUS_QUERY_KEY, queryFn: fetchPromptSourceStatuses });
 
     const [editingSource, setEditingSource] = useState<PromptSource | null>(null);
+    const [githubPickerOpen, setGithubPickerOpen] = useState(false);
     const [viewingId, setViewingId] = useState("");
     const [refreshingId, setRefreshingId] = useState("");
     const [refreshingAll, setRefreshingAll] = useState(false);
@@ -43,6 +45,19 @@ export function ConfigPromptSources() {
     const handleSave = (source: PromptSource) => {
         saveSource(source);
         void invalidatePrompts();
+    };
+
+    const handleGithubPick = async (source: PromptSource) => {
+        saveSource(source);
+        await invalidatePrompts();
+        try {
+            const result = await refreshSource(source.id);
+            await invalidatePrompts();
+            message.success(t("config.promptSources.refreshed", { name: source.name, count: result.count }));
+        } catch (error) {
+            await queryClient.invalidateQueries({ queryKey: STATUS_QUERY_KEY });
+            message.warning(error instanceof Error ? error.message : t("config.promptSources.refreshFailedCached"));
+        }
     };
 
     const handleDelete = (source: PromptSource) => {
@@ -91,6 +106,9 @@ export function ConfigPromptSources() {
     return (
         <div>
             <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
+                <Button icon={<Library className="size-4" />} onClick={() => setGithubPickerOpen(true)}>
+                    {t("config.promptSources.github.add")}
+                </Button>
                 <Button type="primary" icon={<Plus className="size-4" />} onClick={() => setEditingSource(addSource())}>
                     {t("config.promptSources.add")}
                 </Button>
@@ -147,6 +165,7 @@ export function ConfigPromptSources() {
             </section>
 
             <PromptSourceEditorDrawer open={Boolean(editingSource)} source={editingSource} onSave={handleSave} onClose={() => setEditingSource(null)} />
+            <PromptGithubPickerModal open={githubPickerOpen} onPick={(source) => void handleGithubPick(source)} onClose={() => setGithubPickerOpen(false)} />
             <PromptSourceContentModal source={viewingSource} onClose={() => setViewingId("")} />
         </div>
     );

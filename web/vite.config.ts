@@ -11,13 +11,13 @@ const localVersion = readFileSync(resolve(webDir, "../VERSION"), "utf8").trim() 
 const localChangelog = readFileSync(resolve(webDir, "../CHANGELOG.md"), "utf8");
 
 // Dev port is fixed at 5075 so local tooling and docs can hard-reference it
-// （5070 留给桌面端/其它用途，不再做双端口回退探测）.
+// （dev 与 preview 统一 5075，不再使用 5070，避免与其它本地服务撞端口）.
 const DEV_PORT = 5075;
 
-// Dev-态同源化：把桥的 API 前缀代理到开发桥（17381，与 Desktop 插件桥 17371 错开），
+// Dev-态同源化：把桥的 API 前缀代理到本机桥（17371，开发态与 Desktop 插件桥同端口），
 // 让 5075 页面与插件托管形态一样同源连桥，token 发现不再有跨域差异。
 // /canvas 只精确代理桥的三个端点，其余 /canvas/* 留给 SPA 路由（/canvas/:id 工程直链）。
-const DEV_BRIDGE_TARGET = process.env.DEV_BRIDGE_ORIGIN?.trim() || "http://127.0.0.1:17381";
+const DEV_BRIDGE_TARGET = process.env.DEV_BRIDGE_ORIGIN?.trim() || "http://127.0.0.1:17371";
 const DEV_BRIDGE_PROXY = {
     "/bootstrap": DEV_BRIDGE_TARGET,
     "/config": DEV_BRIDGE_TARGET,

@@ -1,16 +1,19 @@
 /**
  * DSH「无限画布 / 3D 导演台」设置桥。
  *
- * 只在宿主设置页把画布/导演台以 iframe 打开时生效：宿主面板在 iframe URL 上带
- * `dshSettingsToken`，本模块只用这个令牌与父窗口收发消息；独立打开（无令牌/无父窗口）
- * 时完全惰性，不影响现有本地配置与离线使用。
+ * 两种运行位置：
+ *   - 宿主设置页里的 iframe（URL 带 `dshSettingsToken`）：与父窗口收发 `dsh-settings:*`，
+ *     并作为中继，把共享设置经 BroadcastChannel 同步给面板「新窗口」（URL 带 `dshWindow=1`）。
+ *   - 面板「新窗口」打开的页面：不带令牌，经 BroadcastChannel 向 iframe 要快照、
+ *     把本地编辑回传给面板；面板没开时保持惰性，只用本地配置。
  *
  * 边界：
  *   - 两个项目在宿主设置文件里各占一个 projects.<id> 分区（渠道 + 默认值），
  *     本模块只读写自己那一份；连接时以宿主较新的分区为准覆盖本地，
  *     本地较新的修改经面板写回宿主（面板负责打时间戳）。
- *   - 应用宿主设置期间不回传，避免与其它窗口形成回声循环。
+ *   - 应用设置期间不回传，避免与其它窗口形成回声循环。
  *   - 密钥只在本机 localStorage 与 ~/.dsh 文件之间流动，不经过任何网络。
+ *   - 中继只在面板 iframe 打开时存在；新窗口独立运行时退回纯本地配置。
  *
  * 两个项目的这份文件逐字节一致；项目 id 由 `initDshSettingsBridge` 传入。
  */
@@ -40,12 +43,23 @@ type SharedSettings = {
     projects?: Record<string, Record<string, unknown>>;
 };
 
+type RelayMessage =
+    | { type: "hello"; sender: string }
+    | { type: "snapshot"; target: string; settings: SharedSettings | null }
+    | { type: "apply"; settings: SharedSettings }
+    | { type: "report"; sender: string; channels: ModelChannel[]; project: Record<string, unknown> };
+
 const CHANNELS_META_PREFIX = "haitang-aigc:channels-updated-at:";
 const PROJECT_META_PREFIX = "haitang-aigc:project-updated-at:";
 const LEGACY_MIGRATION_KEY = "haitang-aigc:legacy-default-migrated-at";
 const AGENT_MODEL_MIGRATION_KEY = "haitang-aigc:agent-model-migrated-at";
 const MODEL_REFRESH_MIGRATION_KEY = "haitang-aigc:model-refresh-migrated-at";
 const APPLY_SILENCE_MS = 800;
+const RELAY_CHANNEL_PREFIX = "haitang-aigc:dsh-settings-relay:";
+const WINDOW_FLAG = "dshWindow";
+const RELAY_HELLO_RETRY_MS = 800;
+const RELAY_HELLO_ATTEMPTS = 6;
+const RELAY_HEARTBEAT_MS = 15_000;
 
 function channelsMetaKey(projectId: string): string {
     return CHANNELS_META_PREFIX + projectId;
@@ -90,6 +104,15 @@ function readParam(name: string): string {
     }
 }
 
+function openRelay(projectId: string): BroadcastChannel | null {
+    if (typeof BroadcastChannel === "undefined") return null;
+    try {
+        return new BroadcastChannel(RELAY_CHANNEL_PREFIX + projectId);
+    } catch {
+        return null;
+    }
+}
+
 function toChannels(input: SharedChannel[]): ModelChannel[] {
     return input.map((channel) =>
         createModelChannel({
@@ -112,8 +135,13 @@ function toChannels(input: SharedChannel[]): ModelChannel[] {
     );
 }
 
-/** 应用宿主设置；只在对应分区时间戳更新时覆盖本地。返回是否改动了配置。 */
-function applySharedSettings(settings: SharedSettings, projectId: string): boolean {
+/**
+ * 应用共享设置；只在对应分区时间戳更新时覆盖本地。返回是否改动了配置。
+ *
+ * `force` 用于同源中继下发：iframe 与本窗口共享 localStorage，分区时间戳常已相等，
+ * 用 `>=` 才会让新窗口跟上；时间戳更旧时仍不覆盖。
+ */
+function applySharedSettings(settings: SharedSettings, projectId: string, force = false): boolean {
     const current = useConfigStore.getState().config;
     let config = current;
     let changed = false;
@@ -124,19 +152,23 @@ function applySharedSettings(settings: SharedSettings, projectId: string): boole
     const channelsAt = project && Array.isArray(project.channels)
         ? Number(project.channelsUpdatedAt) || 0
         : Number(settings.channelsUpdatedAt) || 0;
-    if (Array.isArray(scopedChannels) && channelsAt > readMeta(channelsMetaKey(projectId))) {
+    const localChannelsAt = readMeta(channelsMetaKey(projectId));
+    const channelsFresh = force ? channelsAt >= localChannelsAt : channelsAt > localChannelsAt;
+    if (Array.isArray(scopedChannels) && channelsFresh) {
         const channels = toChannels(scopedChannels as SharedChannel[]);
         if (JSON.stringify(channels) !== JSON.stringify(current.channels)) {
             config = { ...config, channels, models: modelOptionsFromChannels(channels) };
             changed = true;
         }
-        writeMeta(channelsMetaKey(projectId), channelsAt);
+        writeMeta(channelsMetaKey(projectId), Math.max(channelsAt, localChannelsAt));
     }
 
     if (project && typeof project === "object") {
         const updatedAt = Number(project.updatedAt) || 0;
         const metaKey = PROJECT_META_PREFIX + projectId;
-        if (updatedAt > readMeta(metaKey)) {
+        const localUpdatedAt = readMeta(metaKey);
+        const projectFresh = force ? updatedAt >= localUpdatedAt : updatedAt > localUpdatedAt;
+        if (projectFresh) {
             const patch: Record<string, unknown> = {};
             for (const field of TEXT_FIELDS) {
                 const value = project[field];
@@ -161,7 +193,7 @@ function applySharedSettings(settings: SharedSettings, projectId: string): boole
                 config = { ...config, ...patch } as AiConfig;
                 changed = true;
             }
-            writeMeta(metaKey, updatedAt);
+            writeMeta(metaKey, Math.max(updatedAt, localUpdatedAt));
         }
     }
 
@@ -179,21 +211,11 @@ function projectSnapshot(config: AiConfig): Record<string, unknown> {
 }
 
 /**
- * 挂上共享设置桥。必须在应用渲染前调用。
- *
- * @param projectId - `infinite-canvas` 或 `director-desk`，与宿主共享设置里的分区一致。
+ * 消费一次性迁移标记：旧默认渠道刚在本机被替换、旧版 Agent 选择刚从 textModel 搬到
+ * agentModel、或旧默认模型刚刷新时，把本项目两个分区的时间戳抬到迁移时刻，
+ * 否则宿主里更早的值会在 apply 时覆盖回来。返回迁移时刻（0 表示没有迁移）。
  */
-export function initDshSettingsBridge(projectId: string) {
-    const token = readParam("dshSettingsToken");
-    if (!token || typeof window === "undefined" || window.parent === window) return;
-
-    const parent = window.parent;
-    let applying = false;
-    let lastReported = "";
-
-    // 旧默认渠道刚在本机被替换、旧版 Agent 选择刚从 textModel 搬到 agentModel、或旧默认
-    // 模型刚刷新：把本项目两个分区的时间戳抬到迁移时刻，否则宿主里更早的值会在 apply 时
-    // 覆盖回来；连上后再主动上报一次，让宿主拿到迁移结果。
+function consumeMigrationMarkers(projectId: string): number {
     let migratedAt = 0;
     try {
         for (const key of [LEGACY_MIGRATION_KEY, AGENT_MODEL_MIGRATION_KEY, MODEL_REFRESH_MIGRATION_KEY]) {
@@ -209,6 +231,17 @@ export function initDshSettingsBridge(projectId: string) {
         writeMeta(channelsMetaKey(projectId), Math.max(migratedAt, readMeta(channelsMetaKey(projectId))));
         writeMeta(PROJECT_META_PREFIX + projectId, Math.max(migratedAt, readMeta(PROJECT_META_PREFIX + projectId)));
     }
+    return migratedAt;
+}
+
+/** 面板 iframe：与宿主收发设置，同时作为同源中继服务「新窗口」。 */
+function initHostSettingsRelay(projectId: string, token: string) {
+    const parent = window.parent;
+    const relay = openRelay(projectId);
+    let applying = false;
+    let lastReported = "";
+    let lastSettings: SharedSettings | null = null;
+    const migratedAt = consumeMigrationMarkers(projectId);
 
     const post = (message: Record<string, unknown>) => {
         try {
@@ -229,6 +262,17 @@ export function initDshSettingsBridge(projectId: string) {
         post({ type: "dsh-settings:report", ...payload });
     };
 
+    // 新窗口握手：回快照（可能还没有值得下发的宿主设置）并转发它的本地编辑。
+    relay?.addEventListener("message", (event) => {
+        const data = event.data as RelayMessage;
+        if (!data || typeof data !== "object") return;
+        if (data.type === "hello" && typeof data.sender === "string") {
+            relay?.postMessage({ type: "snapshot", target: data.sender, settings: lastSettings });
+        } else if (data.type === "report" && Array.isArray(data.channels) && data.project && typeof data.project === "object") {
+            post({ type: "dsh-settings:report", channels: data.channels, project: data.project });
+        }
+    });
+
     window.addEventListener("message", (event) => {
         if (event.source !== parent) return;
         const data = event.data;
@@ -236,6 +280,7 @@ export function initDshSettingsBridge(projectId: string) {
         if (data.type !== "dsh-settings:apply") return;
 
         const settings = (data.settings && typeof data.settings === "object" ? data.settings : {}) as SharedSettings;
+        lastSettings = settings;
         applying = true;
         applySharedSettings(settings, projectId);
         // 应用后的同步写盘不算用户编辑；短暂静默后把当前值记为已上报，避免回声。
@@ -244,6 +289,7 @@ export function initDshSettingsBridge(projectId: string) {
             const config = useConfigStore.getState().config;
             lastReported = JSON.stringify({ channels: config.channels, project: projectSnapshot(config) });
         }, APPLY_SILENCE_MS);
+        relay?.postMessage({ type: "apply", settings });
 
         // 宿主还没有对应分区（首次使用或刚清空）时，把本地现有配置播种上去。
         const hostProject = settings.projects?.[projectId];
@@ -282,4 +328,124 @@ export function initDshSettingsBridge(projectId: string) {
         };
         flushMigrated(0);
     }
+}
+
+/** 面板「新窗口」：经同源中继跟随 iframe 里的共享设置，并把本地编辑回传。 */
+function initChildSettingsRelay(projectId: string) {
+    const relay = openRelay(projectId);
+    if (!relay) return;
+
+    const sender = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    let applying = false;
+    let connected = false;
+    let lastReported = "";
+    let helloAttempts = 0;
+    let helloTimer: number | undefined;
+    const migratedAt = consumeMigrationMarkers(projectId);
+
+    const report = () => {
+        if (applying) return;
+        const config = useConfigStore.getState().config;
+        const payload = { sender, channels: config.channels, project: projectSnapshot(config) };
+        const serialized = JSON.stringify(payload);
+        if (serialized === lastReported) return;
+        lastReported = serialized;
+        relay.postMessage({ type: "report", ...payload });
+    };
+
+    const applyFromRelay = (settings: SharedSettings) => {
+        applying = true;
+        if (!applySharedSettings(settings, projectId, true)) {
+            applying = false;
+            return;
+        }
+        window.setTimeout(() => {
+            applying = false;
+            const config = useConfigStore.getState().config;
+            lastReported = JSON.stringify({ sender, channels: config.channels, project: projectSnapshot(config) });
+        }, APPLY_SILENCE_MS);
+    };
+
+    const sendHello = () => relay.postMessage({ type: "hello", sender });
+    const scheduleHello = () => {
+        if (helloTimer) clearTimeout(helloTimer);
+        helloTimer = window.setTimeout(() => {
+            if (connected || helloAttempts >= RELAY_HELLO_ATTEMPTS) return;
+            helloAttempts += 1;
+            sendHello();
+            scheduleHello();
+        }, RELAY_HELLO_RETRY_MS);
+    };
+    sendHello();
+    scheduleHello();
+    // 面板 iframe 可能晚于本窗口打开或刷新；低频握手让快照能重新送达。
+    window.setInterval(sendHello, RELAY_HEARTBEAT_MS);
+
+    relay.addEventListener("message", (event) => {
+        const data = event.data as RelayMessage;
+        if (!data || typeof data !== "object") return;
+        if (data.type === "snapshot" && data.target === sender) {
+            connected = true;
+            if (helloTimer) clearTimeout(helloTimer);
+            const settings = data.settings && typeof data.settings === "object"
+                ? (data.settings as SharedSettings)
+                : null;
+            if (settings) applyFromRelay(settings);
+            // 本地比宿主新（迁移后或宿主还没收到过本窗口的编辑）时补报一次。
+            const remote = settings?.projects?.[projectId];
+            const remoteChannelsAt = Number(remote?.channelsUpdatedAt) || Number(settings?.channelsUpdatedAt) || 0;
+            const remoteProjectAt = Number(remote?.updatedAt) || 0;
+            const localChannelsAt = readMeta(channelsMetaKey(projectId));
+            const localProjectAt = readMeta(PROJECT_META_PREFIX + projectId);
+            if (localChannelsAt > remoteChannelsAt || localProjectAt > remoteProjectAt) {
+                window.setTimeout(() => {
+                    if (applying) return;
+                    lastReported = "";
+                    report();
+                }, settings ? APPLY_SILENCE_MS + 100 : 0);
+            }
+            return;
+        }
+        if (data.type === "apply" && data.settings && typeof data.settings === "object") {
+            applyFromRelay(data.settings as SharedSettings);
+        }
+    });
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    useConfigStore.subscribe(() => {
+        if (applying) return;
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(report, 600);
+    });
+
+    // 迁移结果在连上面板后要写回宿主，否则宿主里更早的值会盖回来。
+    if (migratedAt) {
+        const flushMigrated = (attempt: number) => {
+            window.setTimeout(() => {
+                if (applying) {
+                    if (attempt < 4) flushMigrated(attempt + 1);
+                    return;
+                }
+                lastReported = "";
+                report();
+            }, APPLY_SILENCE_MS + 200);
+        };
+        flushMigrated(0);
+    }
+}
+
+/**
+ * 挂上共享设置桥。必须在应用渲染前调用。
+ *
+ * @param projectId - `infinite-canvas` 或 `director-desk`，与宿主共享设置里的分区一致。
+ */
+export function initDshSettingsBridge(projectId: string) {
+    if (typeof window === "undefined") return;
+    const token = readParam("dshSettingsToken");
+    if (token && window.parent !== window) {
+        initHostSettingsRelay(projectId, token);
+        return;
+    }
+    if (readParam(WINDOW_FLAG) !== "1") return;
+    initChildSettingsRelay(projectId);
 }

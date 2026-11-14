@@ -4,11 +4,11 @@ import os from "node:os";
 import path from "node:path";
 
 /**
- * 开发态默认端口（直接 `npm run dev`、未设 PORT 时）。插件托管形态总在 spawn 时
- * 显式传 PORT=17371（dsh/index.js 的 Config.port），不受此值影响；错开是为了
- * 开发桥不再抢占 Desktop 插件桥的 17371（2026-10-31 起）。
+ * 开发态默认端口（直接 `npm run dev`、未设 PORT 时）。与 Desktop 插件桥统一为
+ * 17371（2026-11-14 起）：插件托管形态 spawn 时仍显式传 PORT（dsh/index.js 的
+ * Config.port），同一端口先到先得，start.ps1 探测 /health 健康后直接复用，不再双端口错开。
  */
-export const DEFAULT_PORT = 17381;
+export const DEFAULT_PORT = 17371;
 /**
  * 配置与运行数据的落点：默认 ~/.infinite-canvas；被 Harness 插件托管时经
  * CANVAS_AGENT_HOME 指到 dshHomePath('infinite-canvas')，卸载插件不删数据。
@@ -17,44 +17,6 @@ export const CONFIG_DIR = path.join(
     process.env.CANVAS_AGENT_HOME?.trim() || path.join(os.homedir(), ".infinite-canvas"),
 );
 export const CONFIG_FILE = path.join(CONFIG_DIR, "canvas-agent.json");
-export const CODEX_CONFIG_FILE = path.join(os.homedir(), ".codex", "config.toml");
-let pinnedCodexModelCache: string | null | undefined;
-
-/**
- * 读取 ~/.codex/config.toml 中自定义 model_provider 固定的模型。
- * 仅当 provider 不是内置 openai 且显式配置了 model 时返回模型名，
- * 让网页端模型列表和 turn 请求与本地 Codex 配置保持一致，进程内只读取一次。
- */
-export function getPinnedCodexModel(): string | undefined {
-    if (pinnedCodexModelCache !== undefined) return pinnedCodexModelCache ?? undefined;
-    pinnedCodexModelCache = null;
-    try {
-        const scalars = parseTopLevelTomlScalars(fs.readFileSync(CODEX_CONFIG_FILE, "utf8"));
-        const provider = scalars.model_provider;
-        const model = scalars.model?.trim();
-        if (provider && provider !== "openai" && model) pinnedCodexModelCache = model;
-    } catch {
-        // 没有 Codex 配置文件时按默认 OpenAI 目录处理。
-    }
-    return pinnedCodexModelCache ?? undefined;
-}
-
-/** 只提取 TOML 顶层 key = "value" 形式的字符串标量，忽略注释和各个 [section]。 */
-function parseTopLevelTomlScalars(text: string): Record<string, string> {
-    const result: Record<string, string> = {};
-    let passedFirstTable = false;
-    for (const rawLine of text.split(/\r?\n/)) {
-        const line = rawLine.trim();
-        if (/^\[[^\]]*]$/.test(line)) {
-            passedFirstTable = true;
-            continue;
-        }
-        if (passedFirstTable || !line || line.startsWith("#")) continue;
-        const match = line.match(/^([A-Za-z0-9_-]+)\s*=\s*"([^"]*)"/);
-        if (match) result[match[1]] = match[2];
-    }
-    return result;
-}
 
 /** 依次尝试多个候选路径读取文本文件（tsc dist 与 esbuild 单文件布局层数不同）。 */
 function readBundledFile(candidates: URL[]): string {
@@ -82,10 +44,14 @@ export type CanvasAgentConfig = { url: string; token: string; origins?: string[]
 
 /** 读取本地 Canvas Agent 配置，不存在时生成默认配置。 */
 export function loadConfig(create = false): CanvasAgentConfig {
+    // CANVAS_AGENT_TOKEN 可固定 Connect token（harness 插件设置里配置后经 spawn 注入），
+    // 优先级最高：已落盘的 token 也被覆盖，保证重启后 token 与设置一致。
+    const envToken = process.env.CANVAS_AGENT_TOKEN?.trim();
     try {
-        return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8")) as CanvasAgentConfig;
+        const config = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8")) as CanvasAgentConfig;
+        return envToken ? { ...config, token: envToken } : config;
     } catch {
-        const config = { url: `http://127.0.0.1:${Number(process.env.PORT) || DEFAULT_PORT}`, token: crypto.randomBytes(18).toString("hex") };
+        const config = { url: `http://127.0.0.1:${Number(process.env.PORT) || DEFAULT_PORT}`, token: envToken || crypto.randomBytes(18).toString("hex") };
         if (create) saveConfig(config);
         return config;
     }
@@ -104,22 +70,46 @@ export function writeConfigFile(dir: string, file: string, config: CanvasAgentCo
     fs.chmodSync(file, 0o600);
 }
 
-/** 确保站点级 Codex 工作空间存在并已初始化。 */
+/** 工作空间根目录：旧名 codex-workspaces（引擎已不是 Agent，2026-11-14 起更名）。 */
+const LEGACY_WORKSPACES_DIR = path.join(CONFIG_DIR, "codex-workspaces");
+const WORKSPACES_DIR = path.join(CONFIG_DIR, "agent-workspaces");
+
+/** 旧目录一次性迁移：codex-workspaces → agent-workspaces（改完即返回，不重复做）。 */
+function ensureWorkspacesDirMigrated() {
+    if (fs.existsSync(LEGACY_WORKSPACES_DIR) && !fs.existsSync(WORKSPACES_DIR)) {
+        try {
+            fs.renameSync(LEGACY_WORKSPACES_DIR, WORKSPACES_DIR);
+        } catch {
+            // 迁移失败（占用/权限）不阻断启动，按新目录重新创建。
+        }
+    }
+}
+
+/** 确保站点级 Agent 工作空间存在并已初始化。 */
 export function ensureSiteWorkspace(config: CanvasAgentConfig) {
+    ensureWorkspacesDirMigrated();
     const current = config.workspace;
     if (current?.workspacePath) {
         const workspacePath = resolveWorkspacePath(current.workspacePath);
+        if (workspacePath.startsWith(LEGACY_WORKSPACES_DIR)) {
+            // 旧配置里持久化的工作空间路径指向旧目录：改指新目录并落盘。
+            const migratedPath = path.join(WORKSPACES_DIR, "site");
+            initializeWorkspace(migratedPath);
+            config.workspace = { ...current, workspacePath: migratedPath };
+            saveConfig(config);
+            return { ...current, workspacePath: migratedPath };
+        }
         initializeWorkspace(workspacePath);
         return { ...current, workspacePath };
     }
-    const workspacePath = path.join(CONFIG_DIR, "codex-workspaces", "site");
+    const workspacePath = path.join(WORKSPACES_DIR, "site");
     config.workspace = { workspacePath };
     initializeWorkspace(workspacePath);
     saveConfig(config);
     return { workspacePath };
 }
 
-/** 更新站点级 Codex 工作空间配置。 */
+/** 更新站点级 Agent 工作空间配置。 */
 export function updateSiteWorkspace(config: CanvasAgentConfig, patch: Partial<SiteWorkspaceConfig>) {
     const current = ensureSiteWorkspace(config);
     const workspacePath = patch.workspacePath ? resolveWorkspacePath(patch.workspacePath) : current.workspacePath;

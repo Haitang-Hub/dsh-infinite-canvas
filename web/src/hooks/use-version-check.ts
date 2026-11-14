@@ -4,8 +4,8 @@ import { useTranslation } from "react-i18next";
 import { APP_VERSION } from "@/constant/env";
 import { parseChangelog, type ReleaseInfo } from "@/lib/release";
 
-const latestVersionUrl = "https://raw.githubusercontent.com/Haitang-Hub/Canvas-Director/main/VERSION";
-const latestChangelogUrl = "https://raw.githubusercontent.com/Haitang-Hub/Canvas-Director/main/CHANGELOG.md";
+const latestVersionUrl = "https://raw.githubusercontent.com/Haitang-Hub/dsh-infinite-canvas/full/VERSION";
+const latestChangelogUrl = "https://raw.githubusercontent.com/Haitang-Hub/dsh-infinite-canvas/full/CHANGELOG.md";
 
 function readLocalReleases(): ReleaseInfo[] {
     return __APP_RELEASES__ || [];

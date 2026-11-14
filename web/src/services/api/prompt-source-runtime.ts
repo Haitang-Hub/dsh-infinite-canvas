@@ -22,25 +22,82 @@ export type RawPrompt = {
 
 type RunOptions = { signal?: AbortSignal };
 
-async function fetchSource(source: PromptSource, options?: RunOptions) {
-    const response = await fetch(source.url, { cache: "no-store", signal: options?.signal });
+async function fetchSource(source: PromptSource, options?: RunOptions): Promise<string> {
+    let response = await fetch(source.url, { cache: "no-store", signal: options?.signal });
+    if (response.status === 404 && /\/README_[^/]+\.md$/i.test(source.url)) {
+        response = await fetch(source.url.replace(/README_[^/]+\.md$/i, "README.md"), { cache: "no-store", signal: options?.signal });
+    }
     if (!response.ok) throw new Error(i18n.t("config.promptSources.runtime.requestFailed", { status: response.status }));
-    return response.json();
+    return response.text();
 }
 
 export async function runPromptSource(source: PromptSource, options?: RunOptions): Promise<RawPrompt[]> {
     if (!source.url.trim()) throw new Error(i18n.t("config.promptSources.runtime.urlRequired"));
-    let data: unknown;
+    let text: string;
     try {
-        data = await fetchSource(source, options);
+        text = await fetchSource(source, options);
     } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") throw error;
         throw new Error(i18n.t("config.promptSources.runtime.fetchFailed", { name: source.name, error: error instanceof Error ? error.message : String(error) }));
     }
 
-    const items = parseJsonSource(data, source);
+    const items = parseSourceText(text, source);
     if (source.builtIn && !items.length) throw new Error(i18n.t("config.promptSources.runtime.noPrompts", { name: source.name }));
     return items;
+}
+
+function parseSourceText(text: string, source: PromptSource) {
+    const trimmed = text.trim().replace(/^\uFEFF/, "");
+    if (trimmed.startsWith("[")) {
+        try {
+            const data: unknown = JSON.parse(trimmed);
+            if (Array.isArray(data)) return parseJsonSource(data, source);
+        } catch {
+            // Not a JSON array (e.g. a README whose first line is a "[![badge](...)]" link); fall through to README parsing.
+        }
+    }
+    return parseReadmeSource(text, source);
+}
+
+const README_ENTRY_PATTERN = /^### No\. \d+:\s*(.+)$/gm;
+
+function parseReadmeSource(text: string, source: PromptSource) {
+    const matches = [...text.matchAll(README_ENTRY_PATTERN)];
+    if (!matches.length) throw new Error(i18n.t("config.promptSources.runtime.invalidRoot", { name: source.name }));
+    const items: RawPrompt[] = [];
+    matches.forEach((match, index) => {
+        const title = match[1].trim();
+        const bodyStart = (match.index ?? 0) + match[0].length;
+        const bodyEnd = index + 1 < matches.length ? matches[index + 1].index ?? text.length : text.length;
+        const body = text.slice(bodyStart, bodyEnd);
+        const promptSection = readmeSection(body, "📝");
+        const prompt = promptSection.match(/```[^\n]*\n([\s\S]*?)```/)?.[1]?.trim() || promptSection;
+        if (!title || !prompt) return;
+        const referenceImageUrls = [...body.matchAll(/<img\s+[^>]*src="([^"]+)"/g)].map((image) => image[1]).filter((url) => !url.includes("img.shields.io"));
+        const tags = [...body.matchAll(/^!\[([^\]]+)\]\(https:\/\/img\.shields\.io/gm)].map((badge) => badge[1].split("-")[0]).filter(Boolean);
+        const author = body.match(/-\s+\*\*Author:\*\*\s*\[([^\]]+)\]/)?.[1]?.trim();
+        const id = `${source.id}-${leftPad(index + 1)}`;
+        items.push({
+            id,
+            title,
+            prompt,
+            description: readmeSection(body, "📖"),
+            coverUrl: referenceImageUrls[0] || "",
+            referenceImageUrls,
+            tags: [...new Set(tags)],
+            preview: "",
+            createdAt: "",
+            updatedAt: "",
+            author,
+            sourceUrl: source.homepage || source.url,
+        });
+    });
+    return items;
+}
+
+function readmeSection(body: string, emoji: string) {
+    const pattern = new RegExp(`^#### ${emoji}[^\\n]*\\n([\\s\\S]*?)(?=^#### )`, "m");
+    return body.match(pattern)?.[1]?.trim() || "";
 }
 
 function parseJsonSource(data: unknown, source: PromptSource) {

@@ -169,21 +169,38 @@ function MenuLabel({ text, shortcut }: { text: string; shortcut: string }) {
     );
 }
 
+/** 顶栏导演台连接指示器：轮询探测 3D 导演台本地桥（127.0.0.1:17372 /health，免 token）
+ *  是否安装并启动，在线即显示「导演台已连接」。画布 Agent 桥连接全自动，不再在此展示。 */
 function CompactBridgeStatus() {
     const colorTheme = useThemeStore((state) => state.theme);
     const theme = canvasThemes[colorTheme];
     const { t } = useTranslation();
-    const connected = useAgentStore((state) => state.connected);
-    const enabled = useAgentStore((state) => state.enabled);
-    const busy = useAgentStore((state) => state.sending || state.waiting);
-    const openAgentPanel = useAgentStore((state) => state.openPanel);
-    const label = t(busy ? "agent.status.executing" : connected ? "canvas.agentConnected" : "canvas.agentDisconnected");
-    const dotColor = busy ? "#f59e0b" : connected ? "#22c55e" : theme.node.muted;
+    const [deskOnline, setDeskOnline] = useState<boolean | null>(null);
+    useEffect(() => {
+        let cancelled = false;
+        const probe = async () => {
+            try {
+                const res = await fetch("http://127.0.0.1:17372/health", { signal: AbortSignal.timeout(2000) });
+                const body = (await res.json().catch(() => null)) as { ok?: boolean; plugin?: string } | null;
+                if (!cancelled) setDeskOnline(Boolean(body?.ok && body?.plugin === "director-desk"));
+            } catch {
+                if (!cancelled) setDeskOnline(false);
+            }
+        };
+        void probe();
+        const timer = window.setInterval(probe, 10_000);
+        return () => {
+            cancelled = true;
+            window.clearInterval(timer);
+        };
+    }, []);
+    const label = deskOnline === null ? t("canvas.directorChecking") : deskOnline ? t("canvas.directorConnected") : t("canvas.directorDisconnected");
+    const online = deskOnline === true;
     return (
-        <button type="button" className="flex h-8 cursor-pointer items-center gap-1.5 text-xs transition hover:opacity-75" style={{ color: busy ? "#d97706" : connected ? "#16a34a" : theme.node.muted }} title={t(enabled ? "agent.status.connectedTooltip" : "agent.status.disconnectedTooltip")} aria-label={label} onClick={openAgentPanel}>
-            <span className={`size-2 shrink-0 rounded-full ${busy ? "animate-pulse" : ""}`} style={{ background: dotColor }} />
+        <div className="flex h-8 items-center gap-1.5 text-xs" style={{ color: online ? "#16a34a" : theme.node.muted }} title={label} aria-label={label}>
+            <span className={`size-2 shrink-0 rounded-full ${deskOnline === null ? "animate-pulse" : ""}`} style={{ background: online ? "#22c55e" : theme.node.muted }} />
             <span className="hidden max-w-[140px] truncate sm:inline">{label}</span>
-        </button>
+        </div>
     );
 }
 

@@ -69,12 +69,21 @@ export function channelModelConfig(value: unknown): ChannelModelConfig {
  */
 async function callChannelModel(channel: ChannelModelConfig, body: Record<string, unknown>, signal: AbortSignal): Promise<ChannelChatResult> {
     if (channel.transport === "harness") {
-        const response = await fetch(channel.relay, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ provider: channel.provider, model: channel.model, ...body }),
-            signal,
-        });
+        let response: Response;
+        try {
+            response = await fetch(channel.relay, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ provider: channel.provider, model: channel.model, ...body }),
+                signal,
+            });
+        } catch (error) {
+            // 连接级失败（ECONNREFUSED/DNS 等）undici 只给 "fetch failed"，把 relay 地址与
+            // 底层原因抛出去，否则面板只剩一句无法定位的报错。
+            if (signal.aborted) throw error;
+            const detail = error instanceof Error ? (error.cause instanceof Error ? error.cause.message : error.message) : String(error);
+            throw new Error(`Harness 中继不可达：${channel.relay}（${detail}）`);
+        }
         const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
         if (!response.ok || payload?.ok !== true) {
             throw new Error(typeof payload?.error === "string" && payload.error ? payload.error : `Harness 模型请求失败（HTTP ${response.status}）`);
@@ -124,7 +133,7 @@ type RunChannelTurnOptions = {
     attachments: AgentAttachment[];
     channel: ChannelModelConfig;
     emit: AgentEmit;
-    /** 工具执行入口：与 Codex 共用 session.callTool，画布写入确认仍由网页把关。 */
+    /** 工具执行入口：与 Agent 共用 session.callTool，画布写入确认仍由网页把关。 */
     callTool: (name: string, input: unknown) => Promise<unknown>;
     /** 已启用的 Skills 摘要（name+description），注入系统提示词供模型按需取用。 */
     skills?: Array<{ name: string; description: string }>;

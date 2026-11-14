@@ -49,19 +49,20 @@ if (-not (Test-Path "$webDir/node_modules")) {
 
 Write-Host "Starting services..." -ForegroundColor Cyan
 
-# --- 1. Dev bridge (port 17381; Desktop plugin bridge keeps 17371) ---
-# Dev and plugin bridges use separate ports since 2026-10-31, so they never clash.
-if (Test-PortListening 17381) {
-    if (Test-BridgeHealth 17381 "infinite-canvas") {
-        Write-Host "  dev bridge 17381 already listening - reusing it" -ForegroundColor Green
+# --- 1. Local bridge (port 17371; dev and Desktop plugin share one port) ---
+# Since 2026-11-14 dev and plugin bridges use the same port; an already-listening
+# healthy bridge (either form) is reused, a foreign service means we skip.
+if (Test-PortListening 17371) {
+    if (Test-BridgeHealth 17371 "infinite-canvas") {
+        Write-Host "  bridge 17371 already listening (dev or plugin) - reusing it" -ForegroundColor Green
     } else {
-        Write-Host "[WARN] port 17381 is occupied by another service (not the infinite-canvas dev bridge) - skipping dev bridge" -ForegroundColor Yellow
+        Write-Host "[WARN] port 17371 is occupied by another service (not the infinite-canvas bridge) - skipping dev bridge" -ForegroundColor Yellow
     }
 } elseif (-not (Test-Path "$agentDir/agent-instructions.md")) {
     Write-Host "[WARN] canvas-agent/agent-instructions.md missing - skipping dev bridge" -ForegroundColor Yellow
 } else {
-    Start-Process cmd -ArgumentList '/k', 'title Bridge 17381 && set PORT=17381&& npm run dev' -WorkingDirectory $agentDir
-    Write-Host "  dev bridge started on 17381" -ForegroundColor Green
+    Start-Process cmd -ArgumentList '/k', 'title Bridge 17371 && set PORT=17371&& npm run dev' -WorkingDirectory $agentDir
+    Write-Host "  dev bridge started on 17371" -ForegroundColor Green
 }
 
 # --- 2. Web dev server (fixed port 5075) ---
@@ -76,7 +77,7 @@ Start-Process cmd -ArgumentList '/c', 'timeout /t 4 >nul && start http://localho
 
 Write-Host ""
 Write-Host "Web: http://localhost:5075 (fixed port)" -ForegroundColor Yellow
-Write-Host "Bridge: http://localhost:17381 (dev; Desktop plugin bridge uses 17371, auto-discovered)" -ForegroundColor Yellow
+Write-Host "Bridge: http://localhost:17371 (dev & Desktop plugin share this port, auto-discovered)" -ForegroundColor Yellow
 Write-Host "Press Ctrl+C to stop the web server; close other service windows manually" -ForegroundColor Gray
 Write-Host ""
 

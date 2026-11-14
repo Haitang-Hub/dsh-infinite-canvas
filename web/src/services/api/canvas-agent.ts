@@ -66,16 +66,16 @@ export async function postToolResult(endpoint: string, token: string, clientId: 
     await fetchAgentJson(endpoint, token, `/canvas/result?clientId=${encodeURIComponent(clientId)}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 }
 
-export async function postCodexApproval(endpoint: string, token: string, requestId: string, decision: "accept" | "acceptForSession" | "decline") {
-    await fetchAgentJson(endpoint, token, "/agent/codex/approval", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ requestId, decision }) });
+export async function postEngineApproval(endpoint: string, token: string, requestId: string, decision: "accept" | "acceptForSession" | "decline") {
+    await fetchAgentJson(endpoint, token, "/agent/agent/approval", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ requestId, decision }) });
 }
 
-export async function interruptCodexTurn(endpoint: string, token: string, threadId?: string) {
-    await fetchAgentJson(endpoint, token, "/agent/codex/interrupt", jsonPost({ threadId }));
+export async function interruptEngineTurn(endpoint: string, token: string, threadId?: string) {
+    await fetchAgentJson(endpoint, token, "/agent/agent/interrupt", jsonPost({ threadId }));
 }
 
-export async function acknowledgeCodexHistory(endpoint: string, token: string, threadId: string, turnIds: string[]) {
-    await fetchAgentJson(endpoint, token, "/agent/codex/history/ack", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ threadId, turnIds }) });
+export async function acknowledgeEngineHistory(endpoint: string, token: string, threadId: string, turnIds: string[]) {
+    await fetchAgentJson(endpoint, token, "/agent/agent/history/ack", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ threadId, turnIds }) });
 }
 
 export async function revealAgentLocalFile(endpoint: string, token: string, path: string) {

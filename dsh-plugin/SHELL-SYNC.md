@@ -46,6 +46,7 @@
 | `CANVAS_SITE_DIR` | `DIRECTOR_SITE_DIR` |
 | `CANVAS_AGENT_HOME` | `DIRECTOR_STORE_DIR` |
 | `PORT` | `STORE_PORT` |
+| token env `CANVAS_AGENT_TOKEN`、token 落盘 `<root>/canvas-agent.json` | token env `DIRECTOR_BRIDGE_TOKEN`、token 落盘 `<root>/bridge-token.txt` |
 | `canvas-agent` | `director-mcp` |
 | 文案"画布" | 文案"导演台" |
 | `dshHomePath('infinite-canvas')` | `dshHomePath('3d-director-desk')` |

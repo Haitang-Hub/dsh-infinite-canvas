@@ -7,7 +7,9 @@
  * - 选择值编码进 config.agentModel 或 config.textModel：`harness::<provider>::<model>`，
  *   与渠道编码 `channelId::modelName` 区分；
  * - canvas-agent 在服务端直接回调 relay 端点（服务端到服务端，无 CORS），relay 地址由
- *   宿主客户端在响应里带回的 sourceOrigin 推得。
+ *   宿主客户端在响应里带回的 sourceOrigin 推得；
+ * - 面板「新窗口」（URL 带 `dshWindow=1`）没有父窗口令牌，改为经同源 BroadcastChannel
+ *   把请求转给面板 iframe 代发；面板关闭时请求超时。
  */
 
 export const HARNESS_SELECTION_PREFIX = "harness::";
@@ -31,10 +33,67 @@ export function decodeHarnessSelection(value: string): { provider: string; model
     return { provider: rest.slice(0, sep), model: rest.slice(sep + 2) };
 }
 
+const HARNESS_RELAY_PREFIX = "haitang-aigc:harness-relay:";
+const HARNESS_RELAY_PROJECT = "infinite-canvas";
+
+const childId = Math.random().toString(36).slice(2) + Date.now().toString(36);
 let requestSeq = 0;
 let bridgeInitialized = false;
+let relayServerStarted = false;
+let relayClientInitialized = false;
 let cachedSourceOrigin = "";
 const pending = new Map<string, { resolve: (body: Record<string, unknown>) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+const relayPending = new Map<string, { resolve: (body: Record<string, unknown>) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+
+type RelayRequest = {
+    type: "request";
+    sender: string;
+    requestId: string;
+    action: string;
+    payload?: unknown;
+    timeoutMs?: number;
+};
+type RelayResponse = {
+    type: "response";
+    target: string;
+    requestId: string;
+    body: Record<string, unknown>;
+    sourceOrigin?: string;
+};
+
+function readParam(name: string): string {
+    try {
+        return new URLSearchParams(window.location.search).get(name) || "";
+    } catch {
+        return "";
+    }
+}
+
+let relayChannel: BroadcastChannel | null | undefined;
+function getRelay(): BroadcastChannel | null {
+    if (relayChannel !== undefined) return relayChannel;
+    relayChannel = null;
+    if (typeof BroadcastChannel === "undefined") return relayChannel;
+    try {
+        relayChannel = new BroadcastChannel(HARNESS_RELAY_PREFIX + HARNESS_RELAY_PROJECT);
+    } catch {
+        relayChannel = null;
+    }
+    return relayChannel;
+}
+
+function isEmbedded() {
+    try {
+        return window.self !== window.top;
+    } catch {
+        return false;
+    }
+}
+
+/** 面板「新窗口」：没有父窗口令牌，靠同源中继找面板 iframe。 */
+function isChildWindow() {
+    return readParam("dshWindow") === "1";
+}
 
 function ensureBridge() {
     if (bridgeInitialized) return;
@@ -53,16 +112,7 @@ function ensureBridge() {
     });
 }
 
-function isEmbedded() {
-    try {
-        return window.self !== window.top;
-    } catch {
-        return false;
-    }
-}
-
-function request(action: string, payload?: unknown, timeoutMs = 30_000): Promise<Record<string, unknown>> {
-    if (!isEmbedded()) return Promise.reject(new Error("当前不在 DeepSeek Harness 面板中，无法使用 Harness 模型"));
+function requestFromParent(action: string, payload: unknown, timeoutMs: number): Promise<Record<string, unknown>> {
     ensureBridge();
     const requestId = `harness_${Date.now()}_${(requestSeq += 1)}`;
     return new Promise((resolve, reject) => {
@@ -73,6 +123,84 @@ function request(action: string, payload?: unknown, timeoutMs = 30_000): Promise
         pending.set(requestId, { resolve, reject, timer });
         window.parent.postMessage({ type: "dsh-harness:request", requestId, action, ...(payload !== undefined ? { payload } : {}) }, "*");
     });
+}
+
+/**
+ * 面板 iframe 里的中继服务：把同源新窗口的请求按普通 postMessage 发给宿主，
+ * 再把宿主响应按 requestId 回给那个窗口。
+ */
+function ensureRelayServer() {
+    if (relayServerStarted) return;
+    relayServerStarted = true;
+    const relay = getRelay();
+    if (!relay) return;
+    relay.addEventListener("message", (event) => {
+        const data = event.data as RelayRequest;
+        if (!data || typeof data !== "object" || data.type !== "request") return;
+        if (typeof data.sender !== "string" || typeof data.requestId !== "string") return;
+        const respond = (body: Record<string, unknown>) => {
+            relay.postMessage({
+                type: "response",
+                target: data.sender,
+                requestId: data.requestId,
+                body,
+                ...(cachedSourceOrigin ? { sourceOrigin: cachedSourceOrigin } : {}),
+            });
+        };
+        requestFromParent(data.action, data.payload, Number(data.timeoutMs) || 30_000).then(respond, (error) =>
+            respond({ ok: false, error: String(error?.message ?? error) }),
+        );
+    });
+}
+
+function ensureRelayClient() {
+    if (relayClientInitialized) return;
+    relayClientInitialized = true;
+    const relay = getRelay();
+    if (!relay) return;
+    relay.addEventListener("message", (event) => {
+        const data = event.data as RelayResponse;
+        if (!data || typeof data !== "object" || data.type !== "response") return;
+        if (data.target !== childId || typeof data.requestId !== "string") return;
+        const entry = relayPending.get(data.requestId);
+        if (!entry) return;
+        relayPending.delete(data.requestId);
+        clearTimeout(entry.timer);
+        const body = data.body && typeof data.body === "object" ? data.body : {};
+        if (typeof data.sourceOrigin === "string" && data.sourceOrigin) cachedSourceOrigin = data.sourceOrigin;
+        if (typeof body.sourceOrigin === "string" && body.sourceOrigin) cachedSourceOrigin = body.sourceOrigin;
+        entry.resolve(body);
+    });
+}
+
+function requestViaRelay(action: string, payload: unknown, timeoutMs: number): Promise<Record<string, unknown>> {
+    ensureRelayClient();
+    const relay = getRelay();
+    if (!relay) return Promise.reject(new Error("当前浏览器不支持同源中继，无法使用 Harness 模型"));
+    const requestId = `harness_${Date.now()}_${(requestSeq += 1)}`;
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            relayPending.delete(requestId);
+            reject(new Error("Harness 模型请求超时，请确认 DSH 面板保持打开"));
+        }, timeoutMs);
+        relayPending.set(requestId, { resolve, reject, timer });
+        relay.postMessage({ type: "request", sender: childId, requestId, action, payload, timeoutMs });
+    });
+}
+
+function request(action: string, payload?: unknown, timeoutMs = 30_000): Promise<Record<string, unknown>> {
+    if (isEmbedded()) {
+        ensureBridge();
+        ensureRelayServer();
+        return requestFromParent(action, payload, timeoutMs);
+    }
+    if (isChildWindow()) return requestViaRelay(action, payload, timeoutMs);
+    return Promise.reject(new Error("当前不在 DeepSeek Harness 面板中，无法使用 Harness 模型"));
+}
+
+// iframe 里立即挂上中继服务：新窗口可能先于本页发出请求。
+if (typeof window !== "undefined" && isEmbedded() && readParam("dshSettingsToken")) {
+    ensureRelayServer();
 }
 
 /** 拉取宿主已注册的 provider/模型分组；不在 DSH 中或宿主无可用模型时抛错。 */
