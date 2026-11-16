@@ -69779,7 +69779,14 @@ var MCP_TOOL_NAMES = [
   "canvas_get_selection",
   "canvas_apply_ops",
   "canvas_run_generation",
-  "canvas_export_snapshot"
+  "generation_get_status",
+  "canvas_export_snapshot",
+  "shot_create",
+  "shot_list",
+  "shot_update",
+  "shot_delete",
+  "shot_link",
+  "shot_fork"
 ];
 function createCanvasMcpServer(callTool) {
   const server = new McpServer({ name: "canvas-agent", version: VERSION }, { instructions: AGENT_PROMPT });
