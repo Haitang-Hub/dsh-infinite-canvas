@@ -1,7 +1,7 @@
 {
   "name": "@haitang-hub/dsh-infinite-canvas",
-  "version": "0.2.28",
-  "description": "无限画布右侧栏插件：画布与对话并排，Agent 经 canvas_* 工具实时操作画布节点、生成与导出。",
+  "version": "0.2.29",
+  "description": "无限画布：Agent 驱动的无限 AI 创作画布，节点上编排并生成文本/图片/视频/音频，内置零依赖本地桥（MCP + 浏览器工具执行器）、技能与节点插件市场",
   "icon": "./icon.png",
   "type": "module",
   "main": "./dsh/index.js",
@@ -19,6 +19,7 @@
     "site",
     "icon.png",
     "cordis.patch.yml",
+    "locale",
     "README.md"
   ],
   "scripts": {
