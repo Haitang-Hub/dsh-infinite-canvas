@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Infinite Canvas",
+    "description": "Agent-driven infinite canvas for AI creation: compose text, image, video and audio nodes and generate media with AI. Ships a zero-dependency local bridge (MCP + in-browser tool executor), skills, and a node-plugin marketplace."
+  }
+}
