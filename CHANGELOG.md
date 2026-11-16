@@ -2,6 +2,13 @@
 
 ## Unreleased
 
++ [修复] 跨项目导入全链路接通（导演台「导入到画布」面板此前永久失效）：IC 打开导演台编辑器的两条路径（独立窗口 URL 与插件壳 openTab）此前从不传 fromCanvas/fromNode，导演台侧导入面板永远显示「请从画布中的导演台节点打开」。现在画布页打开导演台时携带来源画布 id 与导演台节点 id，独立窗口、插件壳 iframe、新窗口三条路径全链路传递。
++ [修复] 导演台直写画布数据被覆盖的问题根治：画布工程 KV 的落盘增加跨进程写合并——本页不是磁盘 KV 的唯一写入方（导演台经 17371 /store 跨项目写入），此前内存态会在下一次变更时把磁盘上的导演台写入整体覆盖。现在落盘前检测磁盘变化（基线比对）并按工程 updatedAt 取新者合并：导演台刚导入的工程被保留，本页正在编辑的工程正常胜出，删除标记并集；合并结果收敛进内存（工程目录即刻可见），打开中的工程被外部更新时弹提示引导刷新。
++ [安全] 官方插件市场完整性校验：registry 构建为每个插件 bundle 生成 sha256（official-plugins.json 的 integrity 字段），前端安装前校验、升级时重拉清单校验——CDN 分支被强推也无法对用户下发任意代码（插件源码经 import(blob) 执行，此前无任何校验）。
++ [变更] 插件市场 MCP 工具面扩展 7→14：补齐 generation_get_status（此前 canvas_run_generation 暴露但外部模型无法轮询异步生成状态）与全部 shot_*（镜头编排是与导演台协作的核心面）；MCP 门面与页面 Agent 共用同一 zod schema 注册表。
++ [变更] 依赖与构建收敛：①移除零引用的 three/@react-three/fiber/@react-three/drei/three-stdlib/@types/three 五个死依赖；②vite manualChunks 分包（单体 3.6MB → vendor/antd/editor/markdown/应用五块，应用代码迭代不再打爆 vendor 长缓存）；③web/public/config.js 清理死配置（autoProxy 全库零读者）并去除开发机私有端口泄漏（23210），保留 directorDeskUrl 运行时覆盖通道。
++ [变更] package.json 契约修复：@deepseek-ai/schemastery 从 dependencies 移入 peerDependencies（共享实例的 dsh 包不得自带副本）；dsh-* peer 范围 ^0.2.0-rc.1 → `>=0.2.0-rc.1 <0.3.0`（semver 预发布规则下旧范围不含宿主 0.2.2-rc.3）。
++ [文档] mcp-instructions.md 执行器地址勘误（5070 已废弃：开发态 5075、插件托管为宿主 iframe 执行器）。
 + [变更] 补齐 DSH 展示元数据：新增 locale/zh-CN.json 与 locale/en-US.json（meta.title「无限画布 / Infinite Canvas」+ meta.description），package.json 的 description 与 docs/marketplace 收录条目同步改写（项目名前置），files 白名单加入 locale——DSH 插件市场与已安装插件的标题/描述不再显示包名与旧文案。
 + [修复] 渠道模型多轮工具调用全坏：runChannelTurn 的工具结果只推进了持久化历史（thread.llmMessages），漏推进本轮请求的 messages 数组——下一轮请求的历史以 assistant tool_calls 结尾且没有工具结果，DeepSeek 直接报「Messages history ends with unresolved tools」（红色错误），宽松的提供方（agnes 等 harness 模型）则看不到工具结果而重复调用同一工具（同一节点建了两份）或胡乱回复「工具返回异常」。修复为结果同时进两个数组（persist 历史本就完整，跨 turn 场景不受影响）；此为渠道/harness 模型操作画布一系列失败的共同根源。
 + [变更] 与 Canvas Director 仓库彻底解耦（此前仅剩 URL 级引用）：①官方画布节点插件市场迁入本仓库（plugins/canvas/：registry 集中构建 + plugin-sdk + 各插件源码，`npm run build` 独立产出 5 插件 + official-plugins.json），新增 .github/workflows/publish-plugins.yml（打 v* tag 或手动触发 → 强推孤儿分支 plugins-dist）；②PLUGIN_REGISTRY_URL 默认值改指 `cdn.jsdelivr.net/gh/Haitang-Hub/dsh-infinite-canvas@plugins-dist/official-plugins.json`（VITE_PLUGIN_REGISTRY_URL 可覆盖）；③版本检查 VERSION/CHANGELOG 改拉本仓库 full 分支（dsh 仓库 main 是发布产物分支、无根 VERSION）；④UI GitHub 链接改指本仓库；⑤web preview 端口 5070→5075 与 dev 统一，5070 让还给 Canvas Director。注意：首次发布需在 Actions 手动跑一次 Publish Official Plugins 工作流，此前插件市场拉取会失败（优雅降级）。

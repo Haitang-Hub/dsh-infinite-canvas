@@ -4,7 +4,7 @@
 
 ## 前置条件
 
-- 画布执行器运行在浏览器页面里：**用户必须先打开画布 Web 页面（默认 http://localhost:5070）**，否则工具调用会返回 `executor_offline` 错误。收到该错误时，引导用户打开页面后重试。
+- 画布执行器运行在浏览器页面里：**用户必须先打开画布 Web 页面（开发态默认 http://localhost:5075；DSH 插件托管时执行器是宿主内的画布标签 iframe，随插件就绪自动接入）**，否则工具调用会返回 `executor_offline` 错误。收到该错误时，引导用户打开页面后重试。
 - 操作具体画布前，先用 `site_navigate` 跳转到 `/canvas/:id`（画布 ID 来自 `canvas_list_projects`）。
 
 ## 工具分组

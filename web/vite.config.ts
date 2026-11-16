@@ -72,6 +72,20 @@ export default defineConfig(() => {
             __APP_VERSION__: JSON.stringify(localVersion),
             __APP_RELEASES__: JSON.stringify(parseChangelog(localChangelog)),
         },
+        build: {
+            rollupOptions: {
+                output: {
+                    // 大体积第三方库单独分包：应用代码迭代不再打爆 vendor chunk 的长缓存
+                    manualChunks(id) {
+                        if (!id.includes("node_modules")) return undefined;
+                        if (id.includes("antd") || id.includes("@ant-design") || id.includes("rc-")) return "antd";
+                        if (id.includes("codemirror") || id.includes("@uiw")) return "editor";
+                        if (id.includes("streamdown") || id.includes("marked") || id.includes("shiki") || id.includes("highlight.js")) return "markdown";
+                        return "vendor";
+                    },
+                },
+            },
+        },
         server: { port: DEV_PORT, proxy: DEV_BRIDGE_PROXY },
     };
 });

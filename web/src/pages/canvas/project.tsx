@@ -173,6 +173,12 @@ function measureFocusFrame(container: HTMLDivElement | null, nodeId: string): Fo
 function InfiniteCanvasPage() {
     const { message, modal } = App.useApp();
     const { t } = useTranslation();
+    // 导演台经 /store 直接写盘触发的合并提示（store 层检测到打开中的工程被外部更新时广播）
+    useEffect(() => {
+        const onExternalUpdate = () => message.info(t("canvas.externalCanvasUpdate"));
+        window.addEventListener("canvas-store:external-update", onExternalUpdate);
+        return () => window.removeEventListener("canvas-store:external-update", onExternalUpdate);
+    }, [message, t]);
     // Subscribe to the registry version so plugin registration changes rerender the canvas.
     const nodeRegistryVersion = useNodeRegistryVersion((state) => state.version);
     const params = useParams<{ id: string }>();
@@ -3188,12 +3194,14 @@ function InfiniteCanvasPage() {
     }, []);
 
     const handleOpenDirectorDesk = useCallback(
-        async (deskId: string, _nodeId: string) => {
+        async (deskId: string, nodeId: string) => {
+            // 导入目标（来源画布 + 节点）：导演台编辑器据此恢复「导入到画布」面板的写回定位。
+            const importTarget = projectId ? { fromCanvas: projectId, fromNode: nodeId } : undefined;
             // Harness 插件形态（页面被宿主 iframe 嵌入）：导演台只能以右侧栏标签的形式打开，
             // 其服务由导演台插件托管（自动拉起 + 心跳），不存在「独立窗口」这条路。
             // 因此插件未安装/未启用、或宿主壳没响应时只给可执行的提示，绝不回退去 open 一个空页面。
             if (window.parent !== window) {
-                const shellResult = await requestShellOpenDirectorDesk(deskId);
+                const shellResult = await requestShellOpenDirectorDesk(deskId, importTarget);
                 if (shellResult === "ok") return;
                 if (shellResult === "missing") {
                     modal.info({
@@ -3207,7 +3215,10 @@ function InfiniteCanvasPage() {
             }
             // 打开外部导演台插件（3d-director-desk）中对应的实例；插件地址可经 config.js 的 directorDeskUrl 覆盖。
             const baseUrl = directorDeskBaseUrl();
-            const url = `${baseUrl}/director/editor?instanceId=${encodeURIComponent(deskId)}`;
+            const importQuery = importTarget
+                ? `&fromCanvas=${encodeURIComponent(importTarget.fromCanvas!)}&fromNode=${encodeURIComponent(importTarget.fromNode!)}`
+                : "";
+            const url = `${baseUrl}/director/editor?instanceId=${encodeURIComponent(deskId)}${importQuery}`;
             // 服务未启动时浏览器只会给出原生的"拒绝连接"错误页，先探测再决定如何打开。
             if (await directorDeskReachable()) {
                 window.open(url, "_blank", "noopener");
@@ -3221,7 +3232,7 @@ function InfiniteCanvasPage() {
                 onOk: () => window.open(url, "_blank", "noopener"),
             });
         },
-        [modal, t],
+        [modal, projectId, t],
     );
 
     const renderNodePanel = useCallback(

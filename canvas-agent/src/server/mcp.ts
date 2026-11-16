@@ -8,7 +8,9 @@ type CanvasAgentToolResponse = { ok?: boolean; result?: unknown; error?: string 
 
 /**
  * 对外 MCP 契约只暴露核心工具，控制宿主上下文占用。
- * 全量工具仍经 /api/tools 供内置面板运行时使用；长尾工具后续按需启用。
+ * 全量工具仍经 /api/tools 供内置面板运行时使用；长尾工具按需启用。
+ * 本清单覆盖三类能力：画布读写、异步生成（run_generation 提交 + get_status 轮询，缺一不可）、
+ * 镜头编排（shot_* 是与 3D 导演台协作的核心面，deskId 关联导演台实例）。
  */
 export const MCP_TOOL_NAMES = [
     "site_navigate",
@@ -17,7 +19,14 @@ export const MCP_TOOL_NAMES = [
     "canvas_get_selection",
     "canvas_apply_ops",
     "canvas_run_generation",
+    "generation_get_status",
     "canvas_export_snapshot",
+    "shot_create",
+    "shot_list",
+    "shot_update",
+    "shot_delete",
+    "shot_link",
+    "shot_fork",
 ] as const satisfies readonly ToolName[];
 
 /**

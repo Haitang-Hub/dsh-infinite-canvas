@@ -29,7 +29,14 @@ export async function directorDeskReachable(timeoutMs = 3000): Promise<boolean> 
  */
 export type ShellOpenDirectorDeskResult = "ok" | "missing" | "timeout";
 
-export function requestShellOpenDirectorDesk(instanceId: string, timeoutMs = 2000): Promise<ShellOpenDirectorDeskResult> {
+/** 导入目标：来源画布与导演台节点，供导演台编辑器的「导入到画布」面板定位写回目标。 */
+export type DirectorDeskImportTarget = { fromCanvas?: string | null; fromNode?: string | null };
+
+export function requestShellOpenDirectorDesk(
+    instanceId: string,
+    importTarget?: DirectorDeskImportTarget,
+    timeoutMs = 2000
+): Promise<ShellOpenDirectorDeskResult> {
     return new Promise((resolve) => {
         const onAck = (event: MessageEvent) => {
             const data = event.data as { source?: string; type?: string; instanceId?: string } | null;
@@ -52,6 +59,9 @@ export function requestShellOpenDirectorDesk(instanceId: string, timeoutMs = 200
             resolve("timeout");
         }, timeoutMs);
         window.addEventListener("message", onAck);
-        window.parent.postMessage({ source: "infinite-canvas-page", type: "open-director-desk", instanceId }, "*");
+        window.parent.postMessage(
+            { source: "infinite-canvas-page", type: "open-director-desk", instanceId, ...importTarget },
+            "*"
+        );
     });
 }

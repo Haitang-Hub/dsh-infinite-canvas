@@ -215,6 +215,7 @@ export default {
         empty: "还没有生成视频",
     },
     canvas: {
+        externalCanvasUpdate: "导演台刚向本画布写入了新内容。当前打开的工程请在刷新页面后查看；其它工程已在画布目录中同步。",
         defaultTitle: "无限画布 {{count}}",
         title: "无限画布",
         imported: "已导入 {{count}} 个画布",
@@ -303,7 +304,7 @@ export default {
         controls: { ratio: "比例", duplicate: "复制", delete: "删除", images: "{{count}} 张", texts: "{{count}} 条", generations: "{{count}} 次", reasoning: "推理" },
         generation: { interrupted: "页面刷新后生成已中断，请重新生成。", front: "正面视角", rotateRight: "向右旋转 {{angle}} 度", rotateLeft: "向左旋转 {{angle}} 度", level: "水平视角", topDown: "俯视 {{angle}} 度", lowAngle: "仰视 {{angle}} 度", angleLabel: "AI 多角度：{{horizontal}}，{{pitch}}，镜头距离 {{distance}}，{{lens}}镜头", anglePrompt: "基于参考图重新生成同一主体的新视角，保持主体、颜色、材质和画面风格一致，不要只做透视变形。{{angle}}。" },
         agentOps: { add_node: "新增节点", update_node: "更新节点", delete_node: "删除节点", delete_connections: "删除连线", connect_nodes: "连接", set_viewport: "调整视图", select_nodes: "选择节点", run_generation: "触发生成", shotConnectForbidden: "镜头节点只能与镜头节点相连（用 shot_link 表达叙事顺序），不能连接生成配置等节点；生成请引用导演台导出的预演或参考节点" },
-        pluginErrors: { invalidExport: "插件未导出有效对象", missingFields: "插件缺少 id 或 nodes", downloadFailed: "下载失败 (HTTP {{status}})", registryFailed: "获取官方插件列表失败 (HTTP {{status}})" },
+        pluginErrors: { invalidExport: "插件未导出有效对象", missingFields: "插件缺少 id 或 nodes", downloadFailed: "下载失败 (HTTP {{status}})", registryFailed: "获取官方插件列表失败 (HTTP {{status}})", integrityInvalid: "插件完整性字段格式无效，已拒绝安装", integrityMismatch: "插件完整性校验失败（内容与官方清单不符），已拒绝安装" },
         shortcut: {
             dragCanvas: "拖动画布",
             pan: "平移视图",

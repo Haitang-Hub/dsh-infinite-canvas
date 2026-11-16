@@ -1,5 +1,6 @@
 import { registerNodeDefinitions, unregisterPluginNodes } from "@/lib/canvas/node-registry";
 import { getPluginRuntime } from "@/lib/canvas/plugin-runtime";
+import { fetchOfficialPlugins } from "@/lib/canvas/plugin-registry";
 import { usePluginStore, type InstalledPlugin } from "@/stores/canvas/use-plugin-store";
 import type { CanvasPlugin } from "@/types/canvas-plugin";
 import i18n from "@/i18n";
@@ -51,6 +52,18 @@ async function fetchPluginSource(url: string) {
     return response.text();
 }
 
+// Verify the fetched source against the registry's sha256 integrity (format "sha256-<hex>").
+// Remote bundles are executed via import(blob), so a tampered CDN file would run arbitrary code —
+// official entries ship an integrity field precisely to catch that; mismatch aborts the install.
+async function verifyIntegrity(source: string, integrity?: string) {
+    if (!integrity) return;
+    const expected = integrity.startsWith("sha256-") ? integrity.slice("sha256-".length) : integrity;
+    if (!/^[0-9a-f]{64}$/i.test(expected)) throw new Error(i18n.t("canvas.pluginErrors.integrityInvalid"));
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(source));
+    const actual = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+    if (actual !== expected.toLowerCase()) throw new Error(i18n.t("canvas.pluginErrors.integrityMismatch"));
+}
+
 // Add a cache-busting parameter so watch builds load the latest output.
 function withCacheBust(url: string) {
     return `${url}${url.includes("?") ? "&" : "?"}t=${Date.now()}`;
@@ -58,18 +71,30 @@ function withCacheBust(url: string) {
 
 // Install or replace a plugin from a URL and enable it immediately.
 // bustCache bypasses HTTP/CDN caches during upgrades while persisting a clean URL without the timestamp query.
-export async function installPluginFromUrl(url: string, opts?: { official?: boolean; bustCache?: boolean }) {
+export async function installPluginFromUrl(url: string, opts?: { official?: boolean; bustCache?: boolean; integrity?: string }) {
     const source = await fetchPluginSource(opts?.bustCache ? withCacheBust(url) : url);
+    await verifyIntegrity(source, opts?.integrity);
     const plugin = await evaluatePluginSource(source);
     deactivatePlugin(plugin.id); // Replace the previous version.
-    usePluginStore.getState().upsert({ id: plugin.id, name: plugin.name || plugin.id, version: plugin.version || "0.0.0", description: plugin.description, url, source, enabled: true, official: opts?.official });
+    usePluginStore.getState().upsert({ id: plugin.id, name: plugin.name || plugin.id, version: plugin.version || "0.0.0", description: plugin.description, url, source, enabled: true, official: opts?.official, integrity: opts?.integrity });
     activatePlugin(plugin);
     return plugin;
 }
 
 export async function updatePlugin(record: InstalledPlugin) {
     // Upgrades must fetch the latest output and therefore always bypass caches.
-    return installPluginFromUrl(record.url, { official: record.official, bustCache: true });
+    // Official plugins get the freshest registry entry so the new version's integrity is enforced too;
+    // a registry fetch failure degrades to the cached integrity rather than skipping verification.
+    let integrity = record.integrity;
+    if (record.official) {
+        try {
+            const entry = (await fetchOfficialPlugins()).find((item) => item.id === record.id);
+            if (entry) integrity = entry.integrity;
+        } catch {
+            console.warn(`[plugin] registry unavailable, verifying against cached integrity: ${record.id}`);
+        }
+    }
+    return installPluginFromUrl(record.url, { official: record.official, bustCache: true, integrity });
 }
 
 export async function setPluginEnabled(record: InstalledPlugin, enabled: boolean) {

@@ -411,6 +411,9 @@ window.__ModuleLoader__.load({
       '.dsh-aigc-cfg__flabel{color:var(--dsw-alias-label-secondary);font-size:12px}',
       '.dsh-aigc-cfg__inp{box-sizing:border-box;width:100%;min-height:28px;padding:4px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;outline:none}',
       '.dsh-aigc-cfg__inp:focus{border-color:var(--dsw-alias-state-business-primary)}',
+      '.dsh-aigc-cfg__secret{display:flex;gap:6px;min-width:0}',
+      '.dsh-aigc-cfg__secret .dsh-aigc-cfg__inp{flex:1;min-width:0}',
+      '.dsh-aigc-cfg__secret .dsh-aigc-cfg__btn{flex:none}',
       '.dsh-aigc-cfg__toggle{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;min-width:0}',
       '.dsh-aigc-cfg__toggle input{flex:none;width:16px;height:16px;margin:0;accent-color:var(--dsw-alias-state-business-primary);cursor:pointer}',
       '.dsh-aigc-cfg__btn{height:28px;padding:0 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;cursor:pointer;white-space:nowrap}',
@@ -519,6 +522,28 @@ window.__ModuleLoader__.load({
         spellCheck: false,
         onChange: event => onChange(event.target.value),
       })
+    }
+
+    // 密码态输入 + 显示/隐藏切换：默认打点，按钮切换明文（用于 Connect token 等敏感值）
+    function secretInput({ value, onChange, placeholder }) {
+      const [visible, setVisible] = useState(false)
+      return h('div', { className: 'dsh-aigc-cfg__secret' },
+        h('input', {
+          className: 'dsh-aigc-cfg__inp',
+          type: visible ? 'text' : 'password',
+          value: value ?? '',
+          placeholder: placeholder || '',
+          autoComplete: 'off',
+          spellCheck: false,
+          onChange: event => onChange(event.target.value),
+        }),
+        h('button', {
+          type: 'button',
+          className: 'dsh-aigc-cfg__btn is-sm',
+          title: visible ? '隐藏' : '显示',
+          onClick: () => setVisible(v => !v),
+        }, visible ? '隐藏' : '显示'),
+      )
     }
 
     function selectControl(options, value, onChange) {
@@ -870,7 +895,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'dsh-aigc-cfg__card' },
           cardHead('连接 Token', '网页与脚本访问本地服务用的 Connect token'),
           h('div', { className: 'dsh-aigc-cfg__grid2' },
-            settingsField('Connect token', textInput(project.bridgeToken || '', value => updateProject('bridgeToken', value.trim()), '留空 = 自动（已默认填充当前 token）', 'password')),
+            settingsField('Connect token', h(secretInput, { value: project.bridgeToken || '', onChange: value => updateProject('bridgeToken', value.trim()), placeholder: '留空 = 自动（已默认填充当前 token）' })),
           ),
           h('p', { className: 'dsh-aigc-cfg__note' },
             '服务启动后会把当前 token 默认填充到这里。改成自定义值并「重启服务」后，插件以固定 token 拉起服务；清空再重启则恢复自动 token。网页端始终经 /bootstrap 自动领取，无需手动填写。'),
@@ -1067,7 +1092,8 @@ window.__ModuleLoader__.load({
 
       // 4) 画布页 → 宿主：悬停 3D 导演台节点时请求打开右侧栏「导演台」标签
       //    （导演台插件注册的 kind 'director-desk'；params.instanceId 交给其标签正文，
-      //    由它加载 /director/editor?instanceId=...）。导演台插件缺失时回 ACK，
+      //    由它加载 /director/editor?instanceId=...；fromCanvas/fromNode 选传，
+      //    供导演台编辑器恢复「导入到画布」的写回定位）。导演台插件缺失时回 ACK，
       //    页面据此提示「去插件市场安装/启用」，不回退打开独立窗口（宿主内只会得到空页面）。
       ctx.effect(() => {
         const onMessage = (event) => {
@@ -1075,8 +1101,10 @@ window.__ModuleLoader__.load({
           if (!data || data.source !== 'infinite-canvas-page' || data.type !== 'open-director-desk') return
           const instanceId = typeof data.instanceId === 'string' ? data.instanceId : ''
           if (!instanceId) return
+          const fromCanvas = typeof data.fromCanvas === 'string' ? data.fromCanvas : ''
+          const fromNode = typeof data.fromNode === 'string' ? data.fromNode : ''
           try {
-            ctx.sidebarRight.openTab('director-desk', { params: { instanceId } })
+            ctx.sidebarRight.openTab('director-desk', { params: { instanceId, ...(fromCanvas ? { fromCanvas, fromNode } : {}) } })
             event.source?.postMessage({ source: 'infinite-canvas-shell', type: 'open-director-desk:ok', instanceId }, '*')
           } catch {
             event.source?.postMessage({ source: 'infinite-canvas-shell', type: 'open-director-desk:missing', instanceId }, '*')

@@ -215,6 +215,7 @@ export default {
         empty: "No video generated yet",
     },
     canvas: {
+        externalCanvasUpdate: "The director desk just wrote new content to this canvas. Refresh the page to see the currently open project; other projects are already synced in the canvas directory.",
         defaultTitle: "Infinite Canvas {{count}}",
         title: "Infinite Canvas",
         imported: "Imported {{count}} canvases",
@@ -303,7 +304,7 @@ export default {
         controls: { ratio: "Ratio", duplicate: "Duplicate", delete: "Delete", images: "{{count}} images", texts: "{{count}} options", generations: "{{count}} runs", reasoning: "Reasoning" },
         generation: { interrupted: "Generation was interrupted by a page refresh. Generate again.", front: "front view", rotateRight: "rotated {{angle}} degrees right", rotateLeft: "rotated {{angle}} degrees left", level: "eye-level view", topDown: "{{angle}}-degree top-down view", lowAngle: "{{angle}}-degree low-angle view", angleLabel: "AI multi-angle: {{horizontal}}, {{pitch}}, camera distance {{distance}}, {{lens}} lens", anglePrompt: "Regenerate a new view of the same subject from the reference image. Preserve the subject, colors, materials, and visual style; do not merely apply perspective distortion. {{angle}}." },
         agentOps: { add_node: "Add node", update_node: "Update node", delete_node: "Delete node", delete_connections: "Delete connections", connect_nodes: "Connect", set_viewport: "Adjust view", select_nodes: "Select nodes", run_generation: "Run generation", shotConnectForbidden: "Shot nodes may only connect to other shot nodes (use shot_link for narrative order); they cannot link to generation configs. For generation, reference the preview/guide nodes exported from the director desk." },
-        pluginErrors: { invalidExport: "The plugin did not export a valid object", missingFields: "The plugin is missing id or nodes", downloadFailed: "Download failed (HTTP {{status}})", registryFailed: "Failed to load the official plugin registry (HTTP {{status}})" },
+        pluginErrors: { invalidExport: "The plugin did not export a valid object", missingFields: "The plugin is missing id or nodes", downloadFailed: "Download failed (HTTP {{status}})", registryFailed: "Failed to load the official plugin registry (HTTP {{status}})", integrityInvalid: "Invalid plugin integrity field format; install rejected", integrityMismatch: "Plugin integrity check failed (content does not match the official registry); install rejected" },
         shortcut: {
             dragCanvas: "Drag canvas",
             pan: "Pan view",

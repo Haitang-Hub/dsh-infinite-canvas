@@ -13,6 +13,7 @@ export type InstalledPlugin = {
     enabled: boolean;
     local?: boolean; // Local plugin discovered in web/public/plugins; disabled by default and refetched from its URL when enabled.
     official?: boolean; // Installed from the official registry and grouped accordingly in the manager.
+    integrity?: string; // sha256-<hex> from the registry entry; verified on install and re-verified against the registry on upgrade.
     installedAt: string;
 };
 

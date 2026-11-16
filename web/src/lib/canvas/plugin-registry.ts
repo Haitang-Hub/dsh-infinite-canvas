@@ -8,9 +8,11 @@ export type OfficialPluginEntry = {
     description?: string;
     icon?: string;
     url: string;
+    /** sha256-<hex> of the bundle; verified before install when present. */
+    integrity?: string;
 };
 
-type RawEntry = { id?: string; name?: string; version?: string; description?: string; icon?: string; entry?: string; url?: string };
+type RawEntry = { id?: string; name?: string; version?: string; description?: string; icon?: string; entry?: string; url?: string; integrity?: string };
 type RawManifest = { plugins?: RawEntry[] };
 
 // Fetch the official registry and resolve relative entries against its URL for the existing URL installation flow.
@@ -28,6 +30,7 @@ export async function fetchOfficialPlugins(registryUrl: string = PLUGIN_REGISTRY
             description: item.description,
             icon: item.icon,
             url: item.url ? item.url : new URL(item.entry as string, registryUrl).toString(),
+            ...(item.integrity ? { integrity: item.integrity } : {}),
         }));
 }
 
