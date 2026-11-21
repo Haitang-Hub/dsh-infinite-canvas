@@ -59412,13 +59412,10 @@ import { existsSync } from "node:fs";
 import os3 from "node:os";
 import path6 from "node:path";
 import { fileURLToPath } from "node:url";
-var SKILL_SCOPES = ["repo", "user", "harness", "system"];
+var SKILL_SCOPES = ["repo", "system"];
 var NAME_PATTERN2 = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 function userCanvasDir() {
   return path6.join(os3.homedir(), ".infinite-canvas");
-}
-function harnessSkillsRoot() {
-  return path6.join(os3.homedir(), ".agents", "skills");
 }
 function builtinSkillsRoot() {
   const here = path6.dirname(fileURLToPath(import.meta.url));
@@ -59495,19 +59492,14 @@ var SkillManager = class {
   constructor(workspacePath) {
     const workspace = path6.resolve(workspacePath);
     const repoRoot = path6.join(workspace, ".agents", "skills");
-    const userParent = userCanvasDir();
     this.roots = {
       repo: { root: repoRoot, parent: workspace, writable: true },
-      user: { root: path6.join(userParent, "skills"), parent: userParent, writable: true },
-      harness: { root: harnessSkillsRoot(), parent: path6.dirname(harnessSkillsRoot()), writable: false },
       system: { root: builtinSkillsRoot(), parent: path6.dirname(builtinSkillsRoot()), writable: false }
     };
     this.repoStore = new SkillStore(this.roots.repo.root, this.roots.repo.parent);
-    this.userStore = new SkillStore(this.roots.user.root, this.roots.user.parent, { createParent: true });
   }
   store(scope) {
     if (scope === "repo") return this.repoStore;
-    if (scope === "user") return this.userStore;
     throw new SkillStoreError("\u8BE5\u6765\u6E90\u53EA\u8BFB\uFF0C\u4E0D\u80FD\u4FEE\u6539 Skill", 403);
   }
   writable(scope) {
@@ -69965,7 +69957,7 @@ function startHttpServer() {
   const skillManager = (workspacePath = ensureSiteWorkspace(config2).workspacePath) => new SkillManager(workspacePath);
   const skillScope = (value) => {
     const scope = String(value || "repo");
-    if (!["repo", "user", "system"].includes(scope)) throw new SkillStoreError("Skill \u6765\u6E90\u65E0\u6548", 400);
+    if (!["repo", "system"].includes(scope)) throw new SkillStoreError("Skill \u6765\u6E90\u65E0\u6548", 400);
     return scope;
   };
   const setActiveThread = (activeThreadId, payload = {}, preserveConversation = false) => {
