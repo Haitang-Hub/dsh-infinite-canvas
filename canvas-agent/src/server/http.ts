@@ -27,7 +27,7 @@ export function startHttpServer() {
     const skillManager = (workspacePath = ensureSiteWorkspace(config).workspacePath) => new SkillManager(workspacePath);
     const skillScope = (value: unknown): SkillScope => {
         const scope = String(value || "repo");
-        if (!["repo", "user", "system"].includes(scope)) throw new SkillStoreError("Skill 来源无效", 400);
+        if (!["repo", "system"].includes(scope)) throw new SkillStoreError("Skill 来源无效", 400);
         return scope as SkillScope;
     };
     /** 保存并广播当前站点工作空间的活跃线程。 */

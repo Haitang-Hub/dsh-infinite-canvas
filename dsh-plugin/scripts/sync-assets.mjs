@@ -69,7 +69,7 @@ function replaceDir(source, target, items) {
 }
 
 mustExist(join(bridgeSource, 'index.js'), '先在 canvas-agent/ 运行 npm run build:bundle（esbuild 单文件桥）')
-replaceDir(bridgeSource, bridgeTarget, ['index.js', 'agent-instructions.md', 'package.json'])
+replaceDir(bridgeSource, bridgeTarget, ['index.js', 'agent-instructions.md', 'package.json', 'builtin-skills'])
 
 const hasSite = existsSync(siteSource) && statSync(siteSource).isDirectory()
 if (skipSite) {

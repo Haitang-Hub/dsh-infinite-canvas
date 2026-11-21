@@ -8,9 +8,11 @@ import matter from "gray-matter";
 
 import { SkillStore, SkillStoreError, type ManagedSkillInterface } from "./store.js";
 
-/** Skill 来源：项目（工作区）与个人（本机用户目录）可编辑；harness（~/.agents/skills，与 DeepSeek Harness 共享）与系统（随安装分发）只读。 */
-export type SkillScope = "repo" | "user" | "harness" | "system";
-export const SKILL_SCOPES: readonly SkillScope[] = ["repo", "user", "harness", "system"];
+/** Skill 来源：项目（工作区）可编辑，系统（随安装分发）只读——个人目录来源已收敛移除（2026-11-21），内置技能经 system 来源随包分发。
+ *  曾经的 harness 来源（~/.agents/skills）已移除：那会把与画布无关的本机技能
+ * （法律检索、插件开发指南等）灌进 Agent 上下文，噪声大于收益。 */
+export type SkillScope = "repo" | "system";
+export const SKILL_SCOPES: readonly SkillScope[] = ["repo", "system"];
 const NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export type SkillSourceSummary = {
@@ -28,11 +30,6 @@ type ScopeRoot = { root: string; parent: string; writable: boolean };
 
 function userCanvasDir() {
     return path.join(os.homedir(), ".infinite-canvas");
-}
-
-/** DeepSeek Harness / ZCode 共用的本机技能目录（SKILL.md + frontmatter，格式与本项目一致）。 */
-function harnessSkillsRoot() {
-    return path.join(os.homedir(), ".agents", "skills");
 }
 
 function builtinSkillsRoot() {
@@ -121,20 +118,15 @@ export class SkillManager {
     constructor(workspacePath: string) {
         const workspace = path.resolve(workspacePath);
         const repoRoot = path.join(workspace, ".agents", "skills");
-        const userParent = userCanvasDir();
         this.roots = {
             repo: { root: repoRoot, parent: workspace, writable: true },
-            user: { root: path.join(userParent, "skills"), parent: userParent, writable: true },
-            harness: { root: harnessSkillsRoot(), parent: path.dirname(harnessSkillsRoot()), writable: false },
             system: { root: builtinSkillsRoot(), parent: path.dirname(builtinSkillsRoot()), writable: false },
         };
         this.repoStore = new SkillStore(this.roots.repo.root, this.roots.repo.parent);
-        this.userStore = new SkillStore(this.roots.user.root, this.roots.user.parent, { createParent: true });
     }
 
     store(scope: SkillScope): SkillStore {
         if (scope === "repo") return this.repoStore;
-        if (scope === "user") return this.userStore;
         throw new SkillStoreError("该来源只读，不能修改 Skill", 403);
     }
 

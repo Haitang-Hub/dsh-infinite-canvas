@@ -314,7 +314,7 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
                         disabled={!connected}
                         value={scope}
                         onChange={setScope}
-                        options={[{ value: "all", label: t("agent.skillManager.scopes.all") }, ...(["repo", "user", "harness", "system"] as AgentSkillScope[]).map((value) => ({ value, label: t(`agent.skillManager.scopes.${value}`) }))]}
+                        options={[{ value: "all", label: t("agent.skillManager.scopes.all") }, ...(["repo", "system"] as AgentSkillScope[]).map((value) => ({ value, label: t(`agent.skillManager.scopes.${value}`) }))]}
                     />
                 </div>
                 {errors.length ? (
@@ -396,7 +396,7 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
                 }}
                 onOk={() => void saveSkill()}
             >
-                <div className="mb-5 text-xs" style={{ color: theme.node.muted }}>{t("agent.skillManager.saveLocation")} · <span className="font-mono">{editor?.mode === "edit" || editorValues?.scope === "user" ? "~/.infinite-canvas/skills" : ".agents/skills"}</span></div>
+                <div className="mb-5 text-xs" style={{ color: theme.node.muted }}>{t("agent.skillManager.saveLocation")} · <span className="font-mono">.agents/skills</span></div>
                 <Form key={editor?.mode === "edit" ? editor.detail.revision : `create:${editor?.values?.name || "blank"}`} form={form} initialValues={editorValues} layout="vertical" requiredMark="optional" preserve={false}>
                     <div className="mb-3 text-xs font-medium" style={{ color: theme.node.muted }}>{t("agent.skillManager.basicInfo")}</div>
                     <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
@@ -405,7 +405,7 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
                         </Form.Item>
                         {editor?.mode === "create" ? (
                             <Form.Item name="scope" label={t("agent.skillManager.saveScope")} initialValue="repo" rules={[{ required: true }]}>
-                                <Select aria-label={t("agent.skillManager.saveScope")} options={[{ value: "repo", label: t("agent.skillManager.scopes.repo") }, { value: "user", label: t("agent.skillManager.scopes.user") }]} />
+                                <Select aria-label={t("agent.skillManager.saveScope")} options={[{ value: "repo", label: t("agent.skillManager.scopes.repo") }]} />
                             </Form.Item>
                         ) : null}
                         <Form.Item name="displayName" label={t("agent.skillManager.displayName")} rules={[{ max: 64, message: t("agent.skillManager.displayNameMax") }]}><Input maxLength={64} placeholder={t("agent.skillManager.displayNamePlaceholder")} /></Form.Item>
