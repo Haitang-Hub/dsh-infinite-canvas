@@ -59411,13 +59411,24 @@ import fs6 from "node:fs/promises";
 import os3 from "node:os";
 import path6 from "node:path";
 import { fileURLToPath } from "node:url";
-var SKILL_SCOPES = ["repo", "user", "system"];
+var SKILL_SCOPES = ["repo", "user", "harness", "system"];
 var NAME_PATTERN2 = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 function userCanvasDir() {
   return path6.join(os3.homedir(), ".infinite-canvas");
 }
+function harnessSkillsRoot() {
+  return path6.join(os3.homedir(), ".agents", "skills");
+}
 function builtinSkillsRoot() {
-  return path6.resolve(path6.dirname(fileURLToPath(import.meta.url)), "..", "..", "builtin-skills");
+  const here = path6.dirname(fileURLToPath(import.meta.url));
+  const candidates = [path6.resolve(here, "builtin-skills"), path6.resolve(here, "..", "builtin-skills")];
+  for (const candidate of candidates) {
+    try {
+      if (fs6.existsSync(candidate)) return candidate;
+    } catch {
+    }
+  }
+  return candidates[1];
 }
 function stateFilePath() {
   return path6.join(userCanvasDir(), "skills-state.json");
@@ -59487,6 +59498,7 @@ var SkillManager = class {
     this.roots = {
       repo: { root: repoRoot, parent: workspace, writable: true },
       user: { root: path6.join(userParent, "skills"), parent: userParent, writable: true },
+      harness: { root: harnessSkillsRoot(), parent: path6.dirname(harnessSkillsRoot()), writable: false },
       system: { root: builtinSkillsRoot(), parent: path6.dirname(builtinSkillsRoot()), writable: false }
     };
     this.repoStore = new SkillStore(this.roots.repo.root, this.roots.repo.parent);
