@@ -1,9 +1,0 @@
-src/components/canvas/canvas-node.tsx(486,165): error TS2339: Property 'qc' does not exist on type 'CanvasNodeMetadata'.
-src/components/canvas/canvas-node.tsx(494,29): error TS2339: Property 'sequence' does not exist on type 'CanvasNodeMetadata'.
-src/components/canvas/canvas-node.tsx(495,125): error TS2339: Property 'sequence' does not exist on type 'CanvasNodeMetadata'.
-src/components/canvas/canvas-node.tsx(499,33): error TS2339: Property 'durationSeconds' does not exist on type 'CanvasNodeMetadata'.
-src/components/canvas/canvas-node.tsx(499,71): error TS2339: Property 'durationSeconds' does not exist on type 'CanvasNodeMetadata'.
-src/components/canvas/canvas-node.tsx(501,29): error TS2339: Property 'notes' does not exist on type 'CanvasNodeMetadata'.
-src/components/canvas/canvas-node.tsx(502,125): error TS2339: Property 'notes' does not exist on type 'CanvasNodeMetadata'.
-src/components/layout/model-script-editor.tsx(58,17): error TS2353: Object literal may only specify known properties, and 'content' does not exist in type '((info: { props: ModalProps; }) => DeepStylesType<{ root?: CSSProperties | undefined; header?: CSSProperties | undefined; body?: CSSProperties | undefined; ... 5 more ...; close?: CSSProperties | undefined; } | undefined>) | DeepStylesType<...>'.
-src/constant/canvas.ts(55,37): error TS2353: Object literal may only specify known properties, and 'qc' does not exist in type 'CanvasNodeMetadata'.
