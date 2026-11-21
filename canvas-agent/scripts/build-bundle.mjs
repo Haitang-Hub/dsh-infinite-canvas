@@ -9,7 +9,7 @@
  * 常规 tsc 构建（npm run build）不受影响，dist/ 仍是发布 npm 包的产物。
  */
 
-import { copyFileSync, mkdirSync, rmSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
@@ -39,4 +39,9 @@ await build({
 
 copyFileSync(join(root, "agent-instructions.md"), join(outDir, "agent-instructions.md"));
 copyFileSync(join(root, "package.json"), join(outDir, "package.json"));
+// 内置 Skill（system 来源）随 bundle 分发：sources.ts 的 builtinSkillsRoot 会探测
+// bundle 同目录的 builtin-skills/（dist 布局与插件 bridge 布局都命中）。
+if (existsSync(join(root, "builtin-skills"))) {
+    cpSync(join(root, "builtin-skills"), join(outDir, "builtin-skills"), { recursive: true });
+}
 console.log("[build-bundle] dist-bundle/index.js ready");

@@ -314,7 +314,7 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
                         disabled={!connected}
                         value={scope}
                         onChange={setScope}
-                        options={[{ value: "all", label: t("agent.skillManager.scopes.all") }, ...(["repo", "user", "system"] as AgentSkillScope[]).map((value) => ({ value, label: t(`agent.skillManager.scopes.${value}`) }))]}
+                        options={[{ value: "all", label: t("agent.skillManager.scopes.all") }, ...(["repo", "user", "harness", "system"] as AgentSkillScope[]).map((value) => ({ value, label: t(`agent.skillManager.scopes.${value}`) }))]}
                     />
                 </div>
                 {errors.length ? (

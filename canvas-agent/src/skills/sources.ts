@@ -7,9 +7,9 @@ import matter from "gray-matter";
 
 import { SkillStore, SkillStoreError, type ManagedSkillInterface } from "./store.js";
 
-/** Skill 来源：项目（工作区）与个人（本机用户目录）可编辑；系统（随安装分发）只读。 */
-export type SkillScope = "repo" | "user" | "system";
-export const SKILL_SCOPES: readonly SkillScope[] = ["repo", "user", "system"];
+/** Skill 来源：项目（工作区）与个人（本机用户目录）可编辑；harness（~/.agents/skills，与 DeepSeek Harness 共享）与系统（随安装分发）只读。 */
+export type SkillScope = "repo" | "user" | "harness" | "system";
+export const SKILL_SCOPES: readonly SkillScope[] = ["repo", "user", "harness", "system"];
 const NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export type SkillSourceSummary = {
@@ -29,9 +29,24 @@ function userCanvasDir() {
     return path.join(os.homedir(), ".infinite-canvas");
 }
 
+/** DeepSeek Harness / ZCode 共用的本机技能目录（SKILL.md + frontmatter，格式与本项目一致）。 */
+function harnessSkillsRoot() {
+    return path.join(os.homedir(), ".agents", "skills");
+}
+
 function builtinSkillsRoot() {
-    // dev 经 tsx 从 src/ 运行；打包后从 dist/ 运行，均取 canvas-agent 包根下的 builtin-skills。
-    return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "builtin-skills");
+    // 多布局候选：dev 经 tsx 从 src/ 运行（src/../builtin-skills）；打包后从 dist/ 或
+    // 插件 bridge/ 运行（各自旁侧的 builtin-skills/，由 build-bundle 随包分发）。
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const candidates = [path.resolve(here, "builtin-skills"), path.resolve(here, "..", "builtin-skills")];
+    for (const candidate of candidates) {
+        try {
+            if (fs.existsSync(candidate)) return candidate;
+        } catch {
+            // 忽略探测失败，继续下一个候选。
+        }
+    }
+    return candidates[1];
 }
 
 /** 启停状态持久化：{ "scope:name": boolean }；缺省视为已启用。 */
@@ -109,6 +124,7 @@ export class SkillManager {
         this.roots = {
             repo: { root: repoRoot, parent: workspace, writable: true },
             user: { root: path.join(userParent, "skills"), parent: userParent, writable: true },
+            harness: { root: harnessSkillsRoot(), parent: path.dirname(harnessSkillsRoot()), writable: false },
             system: { root: builtinSkillsRoot(), parent: path.dirname(builtinSkillsRoot()), writable: false },
         };
         this.repoStore = new SkillStore(this.roots.repo.root, this.roots.repo.parent);

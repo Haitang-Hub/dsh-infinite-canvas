@@ -12,7 +12,7 @@ export class AgentApiError<T = unknown> extends Error {
     }
 }
 
-export type AgentSkillScope = "user" | "repo" | "system";
+export type AgentSkillScope = "user" | "repo" | "harness" | "system";
 export type AgentSkillInterface = { displayName?: string | null; shortDescription?: string | null; defaultPrompt?: string | null };
 export type AgentSkillSummary = {
     name: string;
