@@ -543,7 +543,6 @@ window.__ModuleLoader__.load({
         h('button', {
           type: 'button',
           className: 'dsh-aigc-cfg__eye',
-          title: visible ? '隐藏' : '显示',
           'aria-label': visible ? '隐藏' : '显示',
           onClick: () => setVisible(v => !v),
         }, visible
