@@ -109,10 +109,9 @@ async function listReadOnlyScope(scope: SkillScope, root: string): Promise<{ ski
     return { skills, errors };
 }
 
-/** 聚合四个来源的 Skill 管理：列表、启停、全文读取与可写来源的增删改。 */
+/** 聚合两个来源的 Skill 管理：列表、启停、全文读取与可写来源的增删改。 */
 export class SkillManager {
     private readonly repoStore: SkillStore;
-    private readonly userStore: SkillStore;
     private readonly roots: Record<SkillScope, ScopeRoot>;
 
     constructor(workspacePath: string) {
