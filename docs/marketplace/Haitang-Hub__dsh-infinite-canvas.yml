@@ -4,5 +4,5 @@ url: https://github.com/Haitang-Hub/dsh-infinite-canvas
 name: Haitang-Hub/dsh-infinite-canvas
 category: tools
 description:
-  en: "无限画布 | Agent-driven infinite canvas for AI creation — compose text, image, video and audio nodes, generate media with AI, and let agents drive every canvas operation. Ships a zero-dependency local bridge (MCP + in-browser tool executor), skills, and a node-plugin marketplace."
-  zh: "无限画布 | Agent 驱动的无限 AI 创作画布：在节点画布上编排文本、图片、视频、音频并用 AI 生成内容；内置零依赖本地桥（MCP + 浏览器内工具执行器）、技能与节点插件市场。"
+  en: "无限画布 | Agent-driven infinite AI creation canvas — compose and generate text, image, video and audio on nodes; ships a zero-dependency local bridge (MCP + in-browser tool executors), skills, and a node-plugin marketplace."
+  zh: "无限画布：Agent 驱动的无限 AI 创作画布，节点上编排并生成文本/图片/视频/音频，内置零依赖本地桥（MCP + 浏览器工具执行器）、技能与节点插件市场"
