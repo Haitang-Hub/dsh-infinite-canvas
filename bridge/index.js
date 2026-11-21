@@ -59408,6 +59408,7 @@ function storeError(error2, fallback) {
 // src/skills/sources.ts
 var import_gray_matter2 = __toESM(require_gray_matter(), 1);
 import fs6 from "node:fs/promises";
+import { existsSync } from "node:fs";
 import os3 from "node:os";
 import path6 from "node:path";
 import { fileURLToPath } from "node:url";
@@ -59424,7 +59425,7 @@ function builtinSkillsRoot() {
   const candidates = [path6.resolve(here, "builtin-skills"), path6.resolve(here, "..", "builtin-skills")];
   for (const candidate of candidates) {
     try {
-      if (fs6.existsSync(candidate)) return candidate;
+      if (existsSync(candidate)) return candidate;
     } catch {
     }
   }
