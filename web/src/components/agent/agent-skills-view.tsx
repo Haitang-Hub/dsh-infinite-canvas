@@ -57,10 +57,14 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
     const endpoint = url.trim().replace(/\/$/, "");
     const filteredSkills = useMemo(() => {
         const keyword = query.trim().toLowerCase();
-        return skills.filter((skill) => {
-            if (scope !== "all" && skill.scope !== scope) return false;
-            return !keyword || [skill.name, skill.description, skill.interface?.displayName, skill.interface?.shortDescription, skill.shortDescription].some((value) => value?.toLowerCase().includes(keyword));
-        });
+        const scopeWeight = (value: AgentSkillScope) => (value === "repo" ? 0 : 1);
+        return skills
+            .filter((skill) => {
+                if (scope !== "all" && skill.scope !== scope) return false;
+                return !keyword || [skill.name, skill.description, skill.interface?.displayName, skill.interface?.shortDescription, skill.shortDescription].some((value) => value?.toLowerCase().includes(keyword));
+            })
+            // 全部来源视图下项目技能优先展示，系统内置技能排在其后。
+            .sort((left, right) => scopeWeight(left.scope) - scopeWeight(right.scope));
     }, [query, scope, skills]);
 
     const editorValues = editor?.mode === "edit" ? skillFormValues(editor.detail) : editor?.values;
