@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,7 +42,7 @@ function builtinSkillsRoot() {
     const candidates = [path.resolve(here, "builtin-skills"), path.resolve(here, "..", "builtin-skills")];
     for (const candidate of candidates) {
         try {
-            if (fs.existsSync(candidate)) return candidate;
+            if (existsSync(candidate)) return candidate;
         } catch {
             // 忽略探测失败，继续下一个候选。
         }
