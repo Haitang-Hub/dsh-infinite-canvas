@@ -1,6 +1,6 @@
 {
   "name": "@haitang-hub/dsh-infinite-canvas",
-  "version": "0.2.32",
+  "version": "0.2.33",
   "description": "无限画布：Agent 驱动的无限 AI 创作画布，节点上编排并生成文本/图片/视频/音频，内置零依赖本地桥（MCP + 浏览器工具执行器）、技能与节点插件市场",
   "icon": "./icon.png",
   "type": "module",
