@@ -1444,15 +1444,16 @@ export function LocalAgentPanel({ embedded, headless }: { embedded?: boolean; he
                 theme={theme}
                 leading={
                     <div className="flex items-center gap-1">
-                        <div
-                            className={`flex items-center gap-1 ${shell?.dragHandlers ? "cursor-grab active:cursor-grabbing" : ""}`}
-                            title={shell?.dragHandlers ? t("agent.panel.dragHint") : undefined}
-                            {...shell?.dragHandlers}
-                        >                            <span className="grid size-8 place-items-center">
+                        <Tooltip title={shell?.dragHandlers ? t("agent.panel.dragHint") : undefined} mouseEnterDelay={0.2}>
+                            <div
+                                className={`flex items-center gap-1 ${shell?.dragHandlers ? "cursor-grab active:cursor-grabbing" : ""}`}
+                                {...shell?.dragHandlers}
+                            >                            <span className="grid size-8 place-items-center">
                                 <Bot className="size-4" />
                             </span>
                             <div className="hidden text-base font-semibold leading-5 @min-[560px]:block">{t("aiAssistant.title")}</div>
-                        </div>
+                            </div>
+                        </Tooltip>
                     </div>
                 }
                 items={[

@@ -17,6 +17,9 @@ type UserStatusActionsProps = {
     onOpenPlugins?: () => void;
 };
 
+/** 工具栏图标提示统一用 antd Tooltip（深色气泡，跟随主题），不再用原生 title 白框。 */
+const TOOLBAR_TOOLTIP_DELAY = 0.2;
+
 export function UserStatusActions({ showConfig = true, variant = "default", onOpenShortcuts, onOpenPlugins }: UserStatusActionsProps) {
     const { i18n, t } = useTranslation();
     const theme = useThemeStore((state) => state.theme);
@@ -33,25 +36,33 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
         <div className="inline-flex shrink-0 items-center gap-1">
             {variant === "canvas" ? <AiAssistantToggle iconStyle={iconStyle} /> : null}
             {onOpenPlugins ? (
-                <button type="button" className={naturalIconClass} style={iconStyle} onClick={onOpenPlugins} aria-label={t("topNav.plugins")} title={t("topNav.plugins")}>
-                    <Puzzle className="size-4" />
-                </button>
+                <Tooltip title={t("topNav.plugins")} mouseEnterDelay={TOOLBAR_TOOLTIP_DELAY}>
+                    <button type="button" className={naturalIconClass} style={iconStyle} onClick={onOpenPlugins} aria-label={t("topNav.plugins")}>
+                        <Puzzle className="size-4" />
+                    </button>
+                </Tooltip>
             ) : null}
             {showConfig ? (
-                <button type="button" className={naturalIconClass} style={iconStyle} onClick={() => openConfigDialog(false)} aria-label={t("navigation.config")} title={t("navigation.config")}>
-                    <Settings2 className="size-4" />
-                </button>
+                <Tooltip title={t("navigation.config")} mouseEnterDelay={TOOLBAR_TOOLTIP_DELAY}>
+                    <button type="button" className={naturalIconClass} style={iconStyle} onClick={() => openConfigDialog(false)} aria-label={t("navigation.config")}>
+                        <Settings2 className="size-4" />
+                    </button>
+                </Tooltip>
             ) : null}
-            <Tooltip title={languageLabel} mouseEnterDelay={0.2}>
+            <Tooltip title={languageLabel} mouseEnterDelay={TOOLBAR_TOOLTIP_DELAY}>
                 <button type="button" className={`${naturalIconClass} text-[11px] font-semibold tracking-tight`} style={iconStyle} onClick={() => void changeAppLocale(nextLocale)} aria-label={languageLabel}>
                     {locale === "zh-CN" ? "中" : "EN"}
                 </button>
             </Tooltip>
-            <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className={naturalIconClass} style={iconStyle} aria-label={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} title={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} />
+            <Tooltip title={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} mouseEnterDelay={TOOLBAR_TOOLTIP_DELAY}>
+                <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className={naturalIconClass} style={iconStyle} aria-label={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} />
+            </Tooltip>
             {onOpenShortcuts ? (
-                <button type="button" className={naturalIconClass} style={iconStyle} onClick={onOpenShortcuts} aria-label={t("topNav.shortcuts")} title={t("topNav.shortcuts")}>
-                    <Keyboard className="size-4" />
-                </button>
+                <Tooltip title={t("topNav.shortcuts")} mouseEnterDelay={TOOLBAR_TOOLTIP_DELAY}>
+                    <button type="button" className={naturalIconClass} style={iconStyle} onClick={onOpenShortcuts} aria-label={t("topNav.shortcuts")}>
+                        <Keyboard className="size-4" />
+                    </button>
+                </Tooltip>
             ) : null}
         </div>
     );
@@ -69,7 +80,6 @@ function AiAssistantToggle({ iconStyle }: { iconStyle: CSSProperties | undefined
             style={iconStyle}
             aria-label={t("aiAssistant.title")}
             aria-pressed={panelOpen}
-            title={t("aiAssistant.title")}
             onClick={togglePanel}
         >
             <Bot className="size-4" />

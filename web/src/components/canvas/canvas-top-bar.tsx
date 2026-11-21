@@ -197,7 +197,7 @@ function CompactBridgeStatus() {
     const label = deskOnline === null ? t("canvas.directorChecking") : deskOnline ? t("canvas.directorConnected") : t("canvas.directorDisconnected");
     const online = deskOnline === true;
     return (
-        <div className="flex h-8 items-center gap-1.5 text-xs" style={{ color: online ? "#16a34a" : theme.node.muted }} title={label} aria-label={label}>
+        <div className="flex h-8 items-center gap-1.5 text-xs" style={{ color: online ? "#16a34a" : theme.node.muted }} aria-label={label}>
             <span className={`size-2 shrink-0 rounded-full ${deskOnline === null ? "animate-pulse" : ""}`} style={{ background: online ? "#22c55e" : theme.node.muted }} />
             <span className="hidden max-w-[140px] truncate sm:inline">{label}</span>
         </div>
