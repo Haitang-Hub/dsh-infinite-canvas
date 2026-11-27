@@ -75,7 +75,7 @@ export function CanvasTopBar({
                                 type="button"
                                 onClick={toggleSidePanel}
                                 aria-label={t("canvas.expandPanel")}
-                                className="grid size-7 place-items-center rounded-full transition hover:bg-black/5 dark:hover:bg-white/10"
+                                className="grid size-7 place-items-center rounded-full transition hover:bg-[var(--dsw-alias-interactive-bg-hover)]"
                                 style={{ color: theme.node.text }}
                             >
                                 <PanelLeftOpen className="size-4" />
@@ -100,7 +100,7 @@ export function CanvasTopBar({
                             ],
                         }}
                     >
-                        <button type="button" className="grid size-7 place-items-center rounded-full transition hover:bg-black/5 dark:hover:bg-white/10" style={{ color: theme.node.text }} aria-label={t("canvas.openMenu")}>
+                        <button type="button" className="grid size-7 place-items-center rounded-full transition hover:bg-[var(--dsw-alias-interactive-bg-hover)]" style={{ color: theme.node.text }} aria-label={t("canvas.openMenu")}>
                             <Menu className="size-4" />
                         </button>
                     </Dropdown>
@@ -197,8 +197,8 @@ function CompactBridgeStatus() {
     const label = deskOnline === null ? t("canvas.directorChecking") : deskOnline ? t("canvas.directorConnected") : t("canvas.directorDisconnected");
     const online = deskOnline === true;
     return (
-        <div className="flex h-8 items-center gap-1.5 text-xs" style={{ color: online ? "#16a34a" : theme.node.muted }} aria-label={label}>
-            <span className={`size-2 shrink-0 rounded-full ${deskOnline === null ? "animate-pulse" : ""}`} style={{ background: online ? "#22c55e" : theme.node.muted }} />
+        <div className="flex h-8 items-center gap-1.5 text-xs" style={{ color: online ? theme.state.success : theme.node.muted }} aria-label={label}>
+            <span className={`size-2 shrink-0 rounded-full ${deskOnline === null ? "animate-pulse" : ""}`} style={{ background: online ? theme.state.success : theme.node.muted }} />
             <span className="hidden max-w-[140px] truncate sm:inline">{label}</span>
         </div>
     );
@@ -209,12 +209,11 @@ function Shortcut({ keys, value }: { keys: string[]; value: string }) {
     // 描边与文字都用主题 node 色，保证明暗两套下对比度与画布整体一致。
     const colorTheme = useThemeStore((state) => state.theme);
     const theme = canvasThemes[colorTheme];
-    const isDark = colorTheme === "dark";
     const capStyle: CSSProperties = {
         borderColor: theme.node.stroke,
-        background: isDark ? "#383431" : "linear-gradient(#fafaf9, rgba(231,229,223,.9))",
+        background: theme.toolbar.activeBg,
         color: theme.node.text,
-        boxShadow: isDark ? "inset 0 -1px 0 rgba(0,0,0,.4), 0 1px 1px rgba(0,0,0,.3)" : "inset 0 -1px 0 rgba(0,0,0,.06), 0 1px 1px rgba(0,0,0,.05)",
+        boxShadow: `inset 0 -1px 0 ${theme.toolbar.border}, 0 1px 1px ${theme.toolbar.border}`,
     };
     return (
         <div className="grid grid-cols-[minmax(0,1fr)_120px] items-center gap-4 rounded-md px-1 py-1">

@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## v0.2.38 - 2026-11-27
+
++ [重构] 画布主题系统：新增 design-tokens.ts（语义化设计令牌），app-theme / canvas-theme / globals.css 三文件联动重写，主题色、间距、圆角、阴影统一由令牌驱动；画布节点、顶栏、工具栏、侧栏、缩放控件等 16 处组件同步接入令牌。
++ [变更] 画布工具栏、连接点、悬浮工具栏、节点 hover 工具栏、右键菜单、选区工具栏、zoom 控件等组件的样式与交互细节随主题重构一并对齐。
+
 ## v0.2.37 - 2026-11-27
 
 + [新增] Skill 来源扩展「Harness」：SkillManager 新增 harness 只读来源（`~/.agents/skills`，与 DeepSeek Harness / ZCode 共用的本机技能目录），harness 作者的技能无需迁移即可在画布 Agent 中使用；网页端技能来源筛选与类型同步支持 harness（来源标签「Harness」）。内置 Skill 随 bundle 分发：build-bundle 现在把 builtin-skills/ 复制进产物，system 来源在插件形态也可用（builtinSkillsRoot 改为多布局探测）。新增内置技能 comic-drama-director（漫剧生成：分镜脚本确认 → 角色一致性提示词锚点 → 逐格创建与批量生成 → 失败重试与收尾汇报），用户目录同步安装了一份便于即时使用。

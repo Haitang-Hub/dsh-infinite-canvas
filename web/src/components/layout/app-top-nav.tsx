@@ -4,7 +4,9 @@ import { useTranslation } from "react-i18next";
 
 import { AppConfigModal } from "@/components/layout/app-config-modal";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
+import { designTokens } from "@/lib/design-tokens";
 import { useAgentStore } from "@/stores/use-agent-store";
+import { useThemeStore } from "@/stores/use-theme-store";
 import { useEffect, useRef } from "react";
 
 export function AppTopNav() {
@@ -29,10 +31,10 @@ export function AppTopNav() {
     return (
         <>
             {!hideHeader ? (
-                <header className="sticky top-0 z-20 h-14 shrink-0 border-b border-stone-200 bg-background/90 backdrop-blur-xl dark:border-stone-800">
+                <header className="sticky top-0 z-20 h-14 shrink-0 border-b border-[var(--dsw-alias-border-l2)] bg-background/90 backdrop-blur-xl">
                     <div className="mx-auto flex h-full max-w-7xl items-stretch justify-between gap-2 px-3 sm:gap-5 sm:px-6">
                         <div className="flex min-w-0 items-center">
-                            <Link to="/" className="flex h-full shrink-0 items-center gap-2 text-sm font-semibold leading-none tracking-tight text-stone-950 transition hover:text-stone-600 dark:text-stone-100 dark:hover:text-stone-300">
+                            <Link to="/" className="flex h-full shrink-0 items-center gap-2 text-sm font-semibold leading-none tracking-tight text-[var(--dsw-alias-label-primary)] transition hover:text-[var(--dsw-alias-label-secondary)]">
                                 <img src="/logo.png" alt="" className="size-5 shrink-0 object-contain" />
                                 <span className="text-base font-medium">{t("meta.title")}</span>
                             </Link>
@@ -59,10 +61,11 @@ export function AppTopNav() {
 
 /** 顶栏轻量徽标：MCP 画布执行器与桥服务的连接状态（在线/离线/执行中）。 */
 function BridgeStatusBadge({ connected, executing, label, tooltip, onClick }: { connected: boolean; executing: boolean; label: string; tooltip: string; onClick: () => void }) {
-    const color = executing ? "#d97706" : connected ? "#16a34a" : "#a8a29e";
+    const tokens = designTokens[useThemeStore((state) => state.theme)];
+    const color = executing ? tokens.warning : connected ? tokens.success : tokens.labelFaint;
     return (
         <Tooltip title={tooltip}>
-            <button type="button" className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-xs text-stone-500 transition hover:bg-stone-100 dark:hover:bg-stone-800" aria-label={label} onClick={onClick}>
+            <button type="button" className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-xs text-[var(--dsw-alias-label-tertiary)] transition hover:bg-[var(--dsw-alias-interactive-bg-hover)]" aria-label={label} onClick={onClick}>
                 <span className={`size-2 rounded-full ${executing ? "animate-pulse" : ""}`} style={{ background: color }} />
                 <span className="hidden lg:inline">{label}</span>
             </button>

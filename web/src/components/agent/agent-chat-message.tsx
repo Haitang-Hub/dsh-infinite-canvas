@@ -105,7 +105,7 @@ export type AgentChatMessageItem = {
 export function AgentChatMessage({ item, theme, onRejectTool, onApproveTool }: { item: AgentChatMessageItem; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onRejectTool?: (id: string) => void; onApproveTool?: (id: string) => void }) {
     const isUser = item.role === "user";
     const isSystem = item.role === "system";
-    const color = item.role === "error" ? "#dc2626" : item.role === "tool" ? "#2563eb" : theme.node.text;
+    const color = item.role === "error" ? theme.state.danger : item.role === "tool" ? theme.state.info : theme.node.text;
     if (isSystem) {
         return (
             <div className="flex justify-center text-xs">
@@ -188,11 +188,11 @@ export function AgentPendingToolCard({ summary, detail, theme, onReject, onAppro
     const { t } = useTranslation();
     const view = userDetail(detail);
     return (
-        <div className="min-w-0 rounded-xl border px-3 py-3" style={{ borderColor: "rgba(217,119,6,.28)", background: "rgba(217,119,6,.025)", color: theme.node.text }}>
+        <div className="min-w-0 rounded-xl border px-3 py-3" style={{ borderColor: theme.state.warningBorder, background: theme.state.warningFill, color: theme.node.text }}>
             <details className="group">
                 <summary className={`list-none ${view ? "cursor-pointer" : "cursor-default"}`} onClick={(event) => { if (!view) event.preventDefault(); }}>
                     <div className="flex min-w-0 items-center gap-2 text-sm font-medium leading-5">
-                        <CircleAlert className="size-4 shrink-0 text-amber-600" />
+                        <CircleAlert className="size-4 shrink-0 text-[var(--dsw-alias-state-warning-primary)]" />
                         <span className="min-w-0 flex-1">{t("agent.message.awaitingConfirmation")}</span>
                         {view ? <ChevronDown className="size-3.5 shrink-0 transition-transform group-open:rotate-180" style={{ color: theme.node.muted }} /> : null}
                     </div>
@@ -205,7 +205,7 @@ export function AgentPendingToolCard({ summary, detail, theme, onReject, onAppro
                     <Button danger type="text" className="!h-8" icon={<XCircle className="size-3.5" />} onClick={() => onReject?.()}>
                         {t("agent.message.reject")}
                     </Button>
-                    <Button type="text" className="!h-8" icon={<CheckCircle2 className="size-3.5" />} style={{ color: "#16a34a" }} onClick={() => onApprove?.()}>
+                    <Button type="text" className="!h-8" icon={<CheckCircle2 className="size-3.5" />} style={{ color: theme.state.success }} onClick={() => onApprove?.()}>
                         {t("agent.message.approve")}
                     </Button>
                 </div>

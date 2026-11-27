@@ -202,7 +202,7 @@ function MentionHighlightText({ value, labels, placeholder }: { value: string; l
         <>
             {value.split(pattern).map((part, index) =>
                 labels.includes(part) ? (
-                    <span key={`${part}-${index}`} className="rounded-md bg-[#2f80ff]/16 px-1 py-0.5 font-medium text-[#2f80ff] ring-1 ring-[#2f80ff]/24">
+                    <span key={`${part}-${index}`} className="rounded-md bg-[color-mix(in_srgb,var(--dsw-alias-state-business-primary)_16%,transparent)] px-1 py-0.5 font-medium text-[var(--dsw-alias-state-business-primary)] ring-1 ring-[color-mix(in_srgb,var(--dsw-alias-state-business-primary)_24%,transparent)]">
                         {part}
                     </span>
                 ) : (
@@ -284,7 +284,7 @@ function ReferencePreview({ reference }: { reference: CanvasResourceReference })
     if (reference.kind === "video" && reference.previewUrl) return <video src={reference.previewUrl} className="size-9 rounded-md bg-black object-cover" muted preload="metadata" />;
     const Icon = reference.kind === "audio" ? Music2 : reference.kind === "video" ? Video : reference.kind === "image" ? ImageIcon : FileText;
     return (
-        <span className="grid size-9 shrink-0 place-items-center rounded-md bg-black/10">
+        <span className="grid size-9 shrink-0 place-items-center rounded-md bg-[var(--dsw-alias-interactive-bg-active)]">
             <Icon className="size-4" />
         </span>
     );

@@ -1,30 +1,42 @@
 import type { ThemeConfig } from "antd";
 import { theme as antdTheme } from "antd";
 
+import { designTokens } from "./design-tokens";
+
+/**
+ * antd 令牌对齐 DSH 设计令牌：
+ *   - colorPrimary 用品牌中性色（DSH 的 brand-primary 本身就是近黑/近白，不是蓝）
+ *   - colorInfo / colorLink 用品牌蓝（state-business-primary）
+ *   - 悬浮/选中态用 DSH 的 interactive-bg-hover / active
+ */
 const neutral = {
     light: {
-        primary: "#171717",
-        primaryHover: "#000000",
-        primaryText: "#ffffff",
-        elevatedBg: "#ffffff",
-        itemHoverBg: "rgba(23, 23, 23, 0.06)",
-        itemSelectedBg: "rgba(23, 23, 23, 0.1)",
-        itemSelectedHoverBg: "rgba(23, 23, 23, 0.14)",
-        itemText: "#171717",
-        tableSelectedBg: "rgba(17, 17, 17, 0.05)",
-        tableSelectedHoverBg: "rgba(17, 17, 17, 0.08)",
+        primary: designTokens.light.brand,
+        primaryHover: designTokens.light.brandHover,
+        primaryText: designTokens.light.onBrand,
+        elevatedBg: designTokens.light.bgLayer1,
+        itemHoverBg: designTokens.light.bgHover,
+        itemSelectedBg: designTokens.light.bgActive,
+        itemSelectedHoverBg: "rgba(38,49,72,0.14)",
+        itemText: designTokens.light.labelPrimary,
+        tableSelectedBg: designTokens.light.bgHover,
+        tableSelectedHoverBg: designTokens.light.bgActive,
+        info: designTokens.light.accent,
+        link: designTokens.light.link,
     },
     dark: {
-        primary: "#fafafa",
-        primaryHover: "#ffffff",
-        primaryText: "#171717",
-        elevatedBg: "#1c1917",
-        itemHoverBg: "rgba(250, 250, 249, 0.08)",
-        itemSelectedBg: "rgba(250, 250, 249, 0.12)",
-        itemSelectedHoverBg: "rgba(250, 250, 249, 0.16)",
-        itemText: "#fafafa",
-        tableSelectedBg: "rgba(255, 255, 255, 0.08)",
-        tableSelectedHoverBg: "rgba(255, 255, 255, 0.12)",
+        primary: designTokens.dark.brand,
+        primaryHover: designTokens.dark.brandHover,
+        primaryText: designTokens.dark.onBrand,
+        elevatedBg: designTokens.dark.bgLayer2,
+        itemHoverBg: designTokens.dark.bgHover,
+        itemSelectedBg: designTokens.dark.bgActive,
+        itemSelectedHoverBg: "rgba(255,255,255,0.18)",
+        itemText: designTokens.dark.labelPrimary,
+        tableSelectedBg: designTokens.dark.bgHover,
+        tableSelectedHoverBg: designTokens.dark.bgActive,
+        info: designTokens.dark.accent,
+        link: designTokens.dark.link,
     },
 };
 
@@ -36,10 +48,10 @@ export function getAntThemeConfig(dark: boolean): ThemeConfig {
         cssVar: { key: dark ? "infinite-canvas-dark" : "infinite-canvas-light" },
         token: {
             colorPrimary: color.primary,
-            colorInfo: color.primary,
-            colorLink: color.primary,
-            colorLinkHover: color.primaryHover,
-            colorLinkActive: color.primary,
+            colorInfo: color.info,
+            colorLink: color.link,
+            colorLinkHover: color.info,
+            colorLinkActive: color.info,
             colorTextLightSolid: color.primaryText,
             colorBgElevated: color.elevatedBg,
             controlItemBgHover: color.itemHoverBg,
