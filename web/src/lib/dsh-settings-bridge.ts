@@ -27,6 +27,7 @@ import {
     type ModelCapability,
     type ModelChannel,
 } from "@/stores/use-config-store";
+import { defaultBridgeUrl } from "@/lib/agent/bridge-config";
 
 type SharedModel = { name: string; capability?: string; script?: string };
 type SharedChannel = {
@@ -60,6 +61,8 @@ const WINDOW_FLAG = "dshWindow";
 const RELAY_HELLO_RETRY_MS = 800;
 const RELAY_HELLO_ATTEMPTS = 6;
 const RELAY_HEARTBEAT_MS = 15_000;
+/** 独立运行 web 从本地桥拉宿主共享设置的轮询间隔。 */
+const HARNESS_POLL_MS = 5_000;
 
 function channelsMetaKey(projectId: string): string {
     return CHANNELS_META_PREFIX + projectId;
@@ -446,6 +449,36 @@ export function initDshSettingsBridge(projectId: string) {
         initHostSettingsRelay(projectId, token);
         return;
     }
-    if (readParam(WINDOW_FLAG) !== "1") return;
+    if (readParam(WINDOW_FLAG) !== "1") {
+        initStandaloneHarnessPoll(projectId);
+        return;
+    }
     initChildSettingsRelay(projectId);
+}
+
+/**
+ * 独立运行场景（localhost:5075 / vite dev）下的回退同步：
+ * 没有 postMessage / BroadcastChannel 通路，改为从本地 canvas-agent 桥的
+ * /harness-settings 端点拉宿主共享设置。桥没启动或宿主没装时静默跳过。
+ */
+function initStandaloneHarnessPoll(projectId: string) {
+    void (async function pollOnce() {
+        let nextDelay = HARNESS_POLL_MS;
+        try {
+            const base = defaultBridgeUrl();
+            const response = await fetch(`${base}/harness-settings`, { cache: "no-store" });
+            if (!response.ok) {
+                nextDelay = HARNESS_POLL_MS;
+                return;
+            }
+            const body = (await response.json()) as { ok?: boolean; settings?: SharedSettings | null };
+            if (body.ok && body.settings) {
+                applySharedSettings(body.settings, projectId);
+            }
+        } catch {
+            /* 桥未就绪或跨域，等下轮 */
+        } finally {
+            window.setTimeout(pollOnce, nextDelay);
+        }
+    })();
 }

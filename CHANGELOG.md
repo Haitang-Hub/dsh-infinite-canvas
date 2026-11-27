@@ -1,8 +1,10 @@
 # CHANGELOG
 
-## Unreleased
+## v0.2.37 - 2026-11-27
 
 + [新增] Skill 来源扩展「Harness」：SkillManager 新增 harness 只读来源（`~/.agents/skills`，与 DeepSeek Harness / ZCode 共用的本机技能目录），harness 作者的技能无需迁移即可在画布 Agent 中使用；网页端技能来源筛选与类型同步支持 harness（来源标签「Harness」）。内置 Skill 随 bundle 分发：build-bundle 现在把 builtin-skills/ 复制进产物，system 来源在插件形态也可用（builtinSkillsRoot 改为多布局探测）。新增内置技能 comic-drama-director（漫剧生成：分镜脚本确认 → 角色一致性提示词锚点 → 逐格创建与批量生成 → 失败重试与收尾汇报），用户目录同步安装了一份便于即时使用。
++ [新增] canvas-agent 共享设置端点 `/harness-settings`：独立运行的 web 通过它读取宿主 `~/.dsh/haitang-aigc/settings.json`（渠道 + 默认模型 + 生成偏好），插件壳托管和独立 web 形态的设置来源统一。
++ [变更] 插件壳右侧栏标签移除工具栏（连接状态 UI 已下线，连接全自动）。
 
 ## v0.21.9 - 2026-11-17
 

@@ -26,6 +26,7 @@ const DEV_BRIDGE_PROXY = {
     "/mcp": DEV_BRIDGE_TARGET,
     "/agent": DEV_BRIDGE_TARGET,
     "/api/tools": DEV_BRIDGE_TARGET,
+    "/harness-settings": DEV_BRIDGE_TARGET,
     "/canvas/state": DEV_BRIDGE_TARGET,
     "/canvas/activate": DEV_BRIDGE_TARGET,
     "/canvas/result": DEV_BRIDGE_TARGET,

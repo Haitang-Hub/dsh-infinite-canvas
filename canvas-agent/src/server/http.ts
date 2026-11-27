@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 
@@ -67,6 +68,24 @@ export function startHttpServer() {
     // 零配置发现：本机回环端点向同源页面下发连接配置（web 端 bridge-config.ts 消费）。
     // plugin/version 与 /health 同款：web 端据此校验"端口上是不是自己家的桥"。
     app.get("/bootstrap", (_req, res) => res.json({ ok: true, plugin: "infinite-canvas", version: VERSION, url: config.url, token: config.token }));
+    // 独立运行的 web 通过本端点读取宿主共享设置（渠道 + 默认模型 + 生成偏好）。
+    // 宿主 Harness 插件无论托管 canvas-agent 与否都把 settings.json 落在
+    //   ~/.dsh/haitang-aigc/settings.json（dsh-plugin 和 director-desk 共享），
+    // 所以这里用固定 homedir + ".dsh" 路径，避免 canvas-agent CONFIG_DIR 不同
+    // （托管时 ~/.dsh/infinite-canvas / 独立运行时 ~/.infinite-canvas）导致的偏差。
+    // 挂在 token 中间件之前、仅本机回环 origin 放行，文件不存在时返回 ok:true + settings:null。
+    const harnessSettingsPath = path.join(os.homedir(), ".dsh", "haitang-aigc", "settings.json");
+    app.get("/harness-settings", async (_req, res) => {
+        try {
+            const raw = await readFile(harnessSettingsPath, "utf-8");
+            const parsed = JSON.parse(raw);
+            res.json({ ok: true, settings: parsed, settingsPath: harnessSettingsPath });
+        } catch (error) {
+            const isMissing = error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT";
+            res.setHeader("Cache-Control", "no-store");
+            res.json({ ok: true, settings: null, settingsPath: harnessSettingsPath, error: isMissing ? "settings file not found" : String(error) });
+        }
+    });
     // Harness 直连的 streamable-http MCP 门面：与 /health 一样位于 token 中间件之前，回环之外不可达。
     registerMcpHttpEndpoint(app, (name, input) => session.callTool(name, input));
     // 插件托管形态：CANVAS_SITE_DIR 指向 web/dist，由桥直接伺服画布站点（与 director-desk
@@ -440,6 +459,8 @@ function setCors(req: Request, res: Response, url: URL, config: CanvasAgentConfi
     // 本机开发页面（vite 5075 等回环 origin）允许经 /bootstrap 零配置拿 token；
     // 非回环 origin（公网网站 drive-by 探测回环端口）仍然拒绝。
     if (url.pathname === "/bootstrap" && isLoopbackOrigin(origin)) return true;
+    // Harness 共享设置：本机回环 origin 的独立运行 web 通过它拉渠道与默认模型。
+    if (url.pathname === "/harness-settings" && isLoopbackOrigin(origin)) return true;
     // 本地文件存储端点：本机回环 origin（导演台 5080/17372 页面跨项目导入、开发页）放行，
     // 数据只经回环进出且服务仅绑 127.0.0.1；非回环 origin 仍走 token/白名单。
     if ((url.pathname === "/store" || url.pathname.startsWith("/store/") || url.pathname.startsWith("/media/")) && isLoopbackOrigin(origin)) return true;

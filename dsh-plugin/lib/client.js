@@ -72,16 +72,6 @@ window.__ModuleLoader__.load({
       overflow: 'hidden',
       background: '#0b0b0d',
     }
-    const TOOLBAR_STYLE = {
-      display: 'flex',
-      alignItems: 'center',
-      gap: 8,
-      padding: '4px 10px',
-      flex: '0 0 auto',
-      fontSize: 12,
-      color: 'var(--dsw-alias-label-secondary)',
-      borderBottom: '1px solid var(--dsw-alias-border-l2)',
-    }
     const IFRAME_STYLE = {
       flex: '1 1 auto',
       width: '100%',
@@ -99,20 +89,6 @@ window.__ModuleLoader__.load({
       textAlign: 'center',
       lineHeight: 1.6,
       fontSize: 12,
-    }
-    const LINK_BUTTON_STYLE = {
-      cursor: 'pointer',
-      border: '1px solid var(--dsw-alias-border-l3)',
-      borderRadius: 6,
-      padding: '2px 8px',
-      background: 'transparent',
-      color: 'inherit',
-      fontSize: 12,
-    }
-
-    function statusText(info) {
-      if (info === undefined) return '连接中…'
-      return info.ready ? '画布已连接' : '画布未就绪'
     }
 
     /** 桥 origin：host 由 bridge-info 下发（默认 127.0.0.1），不要写死。 */
@@ -136,16 +112,13 @@ window.__ModuleLoader__.load({
       return info
     }
 
-    /** 右侧栏标签正文：工具栏 + 无限画布。 */
+    /** 右侧栏标签正文：无限画布。 */
     function InfiniteCanvasTab() {
       const info = useBridgeInfo()
       const iframeRef = useRef(null)
-      const [nonce, setNonce] = useState(0)
       // 设置同步令牌：写进 iframe URL，只有携带它的消息才会被接受/回发。
       // 独立打开的页面没有令牌，设置桥保持惰性。
       const [settingsToken] = useState(() => Math.random().toString(36).slice(2) + Date.now().toString(36))
-      const [busy, setBusy] = useState(false)
-      const [actionError, setActionError] = useState('')
 
       // Harness 模型代理：iframe 里的 Agent 面板经 postMessage 请求宿主模型目录/代发对话，
       // 这里转成同源 /api/infinite-canvas.harness-* 请求（密钥只在宿主进程内）。
@@ -291,56 +264,9 @@ window.__ModuleLoader__.load({
         }
       }, [info?.ready, info?.host, info?.port, settingsToken])
 
-      // 手动重建桥：宿主端 POST 会杀子进程并重新拉起，随后状态由 5s 轮询刷新。
-      const restartBridge = () => {
-        setBusy(true)
-        setActionError('')
-        fetch('/api/infinite-canvas.restart-bridge', { method: 'POST' })
-          .then(response => response.json())
-          .then(data => {
-            if (data && data.ready === false) setActionError(String(data.error || '桥仍未就绪'))
-            setNonce(value => value + 1)
-          })
-          .catch(error => setActionError(String(error?.message ?? error)))
-          .finally(() => setBusy(false))
-      }
-
-      // 新窗口带 dshWindow=1：页面经同源 BroadcastChannel 跟随本 iframe 的共享设置与 Harness 模型。
-      const openExternal = () => {
-        if (!info?.port) return
-        const query = `dshWindow=1&dshSettingsProject=${SHARED_PROJECT_ID}`
-        window.open(`${bridgeOrigin(info)}/?${query}`, '_blank', 'noopener')
-      }
-
       return h('div', { style: SHELL_STYLE },
-        h('div', { style: TOOLBAR_STYLE },
-          h('span', { style: { fontWeight: 600, color: 'var(--dsw-alias-label-primary)' } }, '无限画布'),
-          h('span', { title: info?.error ? String(info.error) : '' }, statusText(info)),
-          h('span', { style: { flex: 1 } }),
-          h('button', {
-            type: 'button',
-            style: LINK_BUTTON_STYLE,
-            disabled: !info?.ready,
-            onClick: openExternal,
-            title: '在独立窗口打开画布（面板太窄时更好用）',
-          }, '新窗口'),
-          h('button', {
-            type: 'button',
-            style: LINK_BUTTON_STYLE,
-            disabled: busy,
-            onClick: restartBridge,
-            title: '重建本地画布服务（不用重启应用）',
-          }, busy ? '重启中…' : '重启服务'),
-          h('button', {
-            type: 'button',
-            style: LINK_BUTTON_STYLE,
-            onClick: () => setNonce(value => value + 1),
-            title: '重新加载画布（不改工程数据）',
-          }, '刷新'),
-        ),
         info?.ready
           ? h('iframe', {
-            key: nonce,
             ref: iframeRef,
             src: `${bridgeOrigin(info)}/?dshSettingsToken=${encodeURIComponent(settingsToken)}&dshSettingsProject=${SHARED_PROJECT_ID}`,
             title: '无限画布',
@@ -352,9 +278,7 @@ window.__ModuleLoader__.load({
               h('p', { style: { margin: '0 0 6px' } }, '画布服务未就绪。'),
               h('p', { style: { margin: 0 } },
                 info?.error ? String(info.error).slice(0, 200) : '正在启动本地服务（首次约几秒）…'),
-              h('p', { style: { margin: '6px 0 0' } },
-                '插件每 8 秒自动重试一次；也可以点上方「重启服务」立刻重建。'),
-              actionError ? h('p', { style: { margin: '6px 0 0', color: '#d25555' } }, actionError) : null,
+              h('p', { style: { margin: '6px 0 0' } }, '插件每 8 秒自动重试一次。'),
             ),
           ),
       )
@@ -438,6 +362,11 @@ window.__ModuleLoader__.load({
       '.dsh-aigc-cfg__row{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}',
       '.dsh-aigc-cfg__channel{display:flex;flex-direction:column;gap:10px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px}',
       '.dsh-aigc-cfg__channelHead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
+      '.dsh-aigc-cfg__channelToggle{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:none;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;border-radius:4px}',
+      '.dsh-aigc-cfg__channelToggle:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}',
+      '.dsh-aigc-cfg__chevron{transition:transform .15s ease;display:inline-block;font-size:12px;line-height:1}',
+      '.dsh-aigc-cfg__chevron.is-collapsed{transform:rotate(-90deg)}',
+      '.dsh-aigc-cfg__channelBody{display:flex;flex-direction:column;gap:10px}',
       '.dsh-aigc-cfg__channelName{font-weight:600;word-break:break-all}',
       '.dsh-aigc-cfg__badge{padding:0 6px;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:18px;white-space:nowrap}',
       '.dsh-aigc-cfg__spacer{flex:1}',
@@ -674,6 +603,8 @@ window.__ModuleLoader__.load({
       const [message, setMessage] = useState('')
       const [messageError, setMessageError] = useState(false)
       const [refreshKey, setRefreshKey] = useState(0)
+      const [collapsed, setCollapsed] = useState(() => new Set())
+      const [pullingModelIdx, setPullingModelIdx] = useState(-1)
       const dirtyRef = useRef(false)
       const services = useSettingsServices(refreshKey)
       const harness = useHarnessModelGroups()
@@ -757,6 +688,43 @@ window.__ModuleLoader__.load({
         if (position !== index) return channel
         return { ...channel, models: (channel.models || []).filter((_, modelPosition) => modelPosition !== modelIndex) }
       }))
+
+      const toggleCollapse = (index) => setCollapsed(prev => {
+        const next = new Set(prev)
+        if (next.has(index)) next.delete(index); else next.add(index)
+        return next
+      })
+
+      const pullChannelModels = async (index) => {
+        const channel = draft?.channels?.[index]
+        if (!channel) return
+        if (!channel.baseUrl?.trim()) { setMessage('请先填写 Base URL'); setMessageError(true); return }
+        if (!channel.apiKey?.trim()) { setMessage('请先填写 API Key'); setMessageError(true); return }
+        setPullingModelIdx(index)
+        setMessage('')
+        setMessageError(false)
+        try {
+          const url = String(channel.baseUrl).replace(/\/$/, '') + '/v1/models'
+          const response = await fetch(url, { headers: { Authorization: `Bearer ${channel.apiKey}` } })
+          if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`)
+          const body = await response.json()
+          const items = Array.isArray(body?.data) ? body.data : []
+          if (!items.length) throw new Error('接口返回空模型列表')
+          const existingNames = new Set((channel.models || []).filter(m => !m.script).map(m => m.name))
+          const fetched = items.map(m => m.id || m.name).filter(Boolean)
+          const newModels = fetched.filter(id => !existingNames.has(id)).map(name => ({ name, capability: 'text' }))
+          updateChannels(channels => channels.map((c, i) => i === index
+            ? { ...c, models: [...(c.models || []), ...newModels] }
+            : c))
+          setMessage(`拉到 ${items.length} 个模型，新增 ${newModels.length} 个（已存在的模型保留不变）`)
+          setMessageError(false)
+        } catch (error) {
+          setMessage(`拉取失败：${error?.message ?? error}`)
+          setMessageError(true)
+        } finally {
+          setPullingModelIdx(-1)
+        }
+      }
 
       const save = () => {
         if (!draft || busy) return
@@ -918,54 +886,74 @@ window.__ModuleLoader__.load({
             ? h('p', { className: 'dsh-aigc-cfg__note' },
               TEXT_MODELS_ONLY ? '还没有渠道。新增后即可在导演台里使用。' : '还没有渠道。新增后即可在画布里使用。')
             : null,
-          draft.channels.map((channel, index) => h('div', { className: 'dsh-aigc-cfg__channel', key: channel.id || index },
-            h('div', { className: 'dsh-aigc-cfg__channelHead' },
-              h('span', { className: 'dsh-aigc-cfg__channelName' }, channel.name || channel.id || `渠道 ${index + 1}`),
-              h('span', { className: 'dsh-aigc-cfg__badge' }, channel.apiFormat || 'openai'),
-              h('span', { className: 'dsh-aigc-cfg__badge' },
-                TEXT_MODELS_ONLY ? `${visibleChannelModels(channel).length} 个文本模型` : `${(channel.models || []).length} 个模型`),
-              h('span', { className: 'dsh-aigc-cfg__spacer' }),
-              h('button', {
-                type: 'button',
-                className: 'dsh-aigc-cfg__btn is-danger is-sm',
-                onClick: () => removeChannel(index),
-              }, '删除渠道'),
-            ),
-            h('div', { className: 'dsh-aigc-cfg__grid2' },
-              settingsField('名称', textInput(channel.name, value => patchChannel(index, 'name', value), '如 火山方舟')),
-              settingsField('API 格式', selectControl(API_FORMATS, channel.apiFormat || 'openai', value => patchChannel(index, 'apiFormat', value))),
-            ),
-            settingsField('Base URL', textInput(channel.baseUrl, value => patchChannel(index, 'baseUrl', value), 'https://…')),
-            settingsField('API Key', h('input', {
-              className: 'dsh-aigc-cfg__inp',
-              type: 'password',
-              value: channel.apiKey || '',
-              placeholder: '（未填写）',
-              autoComplete: 'off',
-              spellCheck: false,
-              onChange: event => patchChannel(index, 'apiKey', event.target.value),
-            })),
-            h('div', { className: 'dsh-aigc-cfg__models' },
-              h('span', { className: 'dsh-aigc-cfg__modelsHead' }, TEXT_MODELS_ONLY ? '文本模型' : '模型'),
-              visibleChannelModels(channel).map(({ model, index: modelIndex }) => h('div', {
-                className: 'dsh-aigc-cfg__modelRow',
-                key: `${modelIndex}-${model.name}`,
-              },
-                textInput(model.name, value => patchModel(index, modelIndex, 'name', value), '模型名，如 deepseek-chat'),
-                TEXT_MODELS_ONLY
-                  ? null
-                  : selectControl(CAPABILITIES, model.capability || 'text', value => patchModel(index, modelIndex, 'capability', value)),
-                model.script ? h('span', { className: 'dsh-aigc-cfg__badge', title: '该模型带自定义调用脚本，设置页不改写脚本' }, '脚本') : null,
+          draft.channels.map((channel, index) => {
+            const isCollapsed = collapsed.has(index)
+            const body = h('div', { className: 'dsh-aigc-cfg__channelBody' },
+              h('div', { className: 'dsh-aigc-cfg__grid2' },
+                settingsField('名称', textInput(channel.name, value => patchChannel(index, 'name', value), '如 火山方舟')),
+                settingsField('API 格式', selectControl(API_FORMATS, channel.apiFormat || 'openai', value => patchChannel(index, 'apiFormat', value))),
+              ),
+              settingsField('Base URL', textInput(channel.baseUrl, value => patchChannel(index, 'baseUrl', value), 'https://…')),
+              settingsField('API Key', h('input', {
+                className: 'dsh-aigc-cfg__inp',
+                type: 'password',
+                value: channel.apiKey || '',
+                placeholder: '（未填写）',
+                autoComplete: 'off',
+                spellCheck: false,
+                onChange: event => patchChannel(index, 'apiKey', event.target.value),
+              })),
+              h('div', { className: 'dsh-aigc-cfg__models' },
+                h('span', { className: 'dsh-aigc-cfg__modelsHead' }, TEXT_MODELS_ONLY ? '文本模型' : '模型'),
+                visibleChannelModels(channel).map(({ model, index: modelIndex }) => h('div', {
+                  className: 'dsh-aigc-cfg__modelRow',
+                  key: `${modelIndex}-${model.name}`,
+                },
+                  textInput(model.name, value => patchModel(index, modelIndex, 'name', value), '模型名，如 deepseek-chat'),
+                  TEXT_MODELS_ONLY
+                    ? null
+                    : selectControl(CAPABILITIES, model.capability || 'text', value => patchModel(index, modelIndex, 'capability', value)),
+                  model.script ? h('span', { className: 'dsh-aigc-cfg__badge', title: '该模型带自定义调用脚本，设置页不改写脚本' }, '脚本') : null,
+                  h('button', {
+                    type: 'button',
+                    className: 'dsh-aigc-cfg__btn is-ghost is-sm',
+                    onClick: () => removeModel(index, modelIndex),
+                  }, '移除'),
+                )),
+                h('button', { type: 'button', className: 'dsh-aigc-cfg__btn is-sm', onClick: () => addModel(index) }, '+ 添加模型'),
+              ),
+            )
+            return h('div', { className: 'dsh-aigc-cfg__channel', key: channel.id || index },
+              h('div', { className: 'dsh-aigc-cfg__channelHead' },
                 h('button', {
                   type: 'button',
-                  className: 'dsh-aigc-cfg__btn is-ghost is-sm',
-                  onClick: () => removeModel(index, modelIndex),
-                }, '移除'),
-              )),
-              h('button', { type: 'button', className: 'dsh-aigc-cfg__btn is-sm', onClick: () => addModel(index) }, '+ 添加模型'),
-            ),
-          )),
-          h('div', { className: 'dsh-aigc-cfg__row' },
+                  className: 'dsh-aigc-cfg__channelToggle',
+                  onClick: () => toggleCollapse(index),
+                  title: isCollapsed ? '展开渠道' : '折叠渠道',
+                  'aria-expanded': !isCollapsed,
+                }, h('span', { className: `dsh-aigc-cfg__chevron${isCollapsed ? ' is-collapsed' : ''}` }, '▾')),
+                h('span', { className: 'dsh-aigc-cfg__channelName' }, channel.name || channel.id || `渠道 ${index + 1}`),
+                h('span', { className: 'dsh-aigc-cfg__badge' }, channel.apiFormat || 'openai'),
+                h('span', { className: 'dsh-aigc-cfg__badge' },
+                  TEXT_MODELS_ONLY ? `${visibleChannelModels(channel).length} 个文本模型` : `${(channel.models || []).length} 个模型`),
+                h('span', { className: 'dsh-aigc-cfg__spacer' }),
+                h('button', {
+                  type: 'button',
+                  className: 'dsh-aigc-cfg__btn is-sm',
+                  disabled: pullingModelIdx === index,
+                  onClick: () => pullChannelModels(index),
+                  title: '调用 {baseUrl}/v1/models 自动列出可用模型',
+                }, pullingModelIdx === index ? '拉取中…' : '拉取模型'),
+                h('button', {
+                  type: 'button',
+                  className: 'dsh-aigc-cfg__btn is-danger is-sm',
+                  onClick: () => removeChannel(index),
+                }, '删除渠道'),
+              ),
+              isCollapsed ? null : body,
+            )
+          })
+          ,h('div', { className: 'dsh-aigc-cfg__row' },
             h('button', { type: 'button', className: 'dsh-aigc-cfg__btn', onClick: addChannel }, '+ 新增渠道'),
           ),
         ),

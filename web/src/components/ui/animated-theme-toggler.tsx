@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
 import { flushSync } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -86,7 +86,6 @@ export const AnimatedThemeToggler = ({ children, className, duration = 400, vari
     const { t } = useTranslation();
     const shape = variant ?? "circle";
     const [isDark, setIsDark] = useState(false);
-    const buttonRef = useRef<HTMLButtonElement>(null);
 
     useEffect(() => {
         if (theme) {
@@ -109,84 +108,89 @@ export const AnimatedThemeToggler = ({ children, className, duration = 400, vari
         return () => observer.disconnect();
     }, [theme]);
 
-    const toggleTheme = useCallback(() => {
-        const button = buttonRef.current;
-        if (!button) return;
+    const toggleTheme = useCallback(
+        (event: React.MouseEvent<HTMLButtonElement>) => {
+            // 用事件目标取按钮位置：外层 Tooltip 会把 antd 的 ref 作为 prop 透传并覆盖组件内部 ref，
+            // 所以不能再依赖 buttonRef。
+            const button = event.currentTarget;
+            if (!button) return;
 
-        const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
-        const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+            const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
+            const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
 
-        let x: number;
-        let y: number;
-        if (fromCenter) {
-            x = viewportWidth / 2;
-            y = viewportHeight / 2;
-        } else {
-            const { top, left, width, height } = button.getBoundingClientRect();
-            x = left + width / 2;
-            y = top + height / 2;
-        }
+            let x: number;
+            let y: number;
+            if (fromCenter) {
+                x = viewportWidth / 2;
+                y = viewportHeight / 2;
+            } else {
+                const { top, left, width, height } = button.getBoundingClientRect();
+                x = left + width / 2;
+                y = top + height / 2;
+            }
 
-        const maxRadius = Math.hypot(Math.max(x, viewportWidth - x), Math.max(y, viewportHeight - y));
+            const maxRadius = Math.hypot(Math.max(x, viewportWidth - x), Math.max(y, viewportHeight - y));
 
-        const applyTheme = () => {
-            const nextTheme = targetTheme ?? (isDark ? "light" : "dark");
-            if (nextTheme === (isDark ? "dark" : "light")) return;
-            setIsDark(nextTheme === "dark");
-            document.documentElement.classList.toggle("dark", nextTheme === "dark");
-            document.documentElement.style.colorScheme = nextTheme;
-            onThemeChange?.(nextTheme);
-        };
+            const applyTheme = () => {
+                const nextTheme = targetTheme ?? (isDark ? "light" : "dark");
+                if (nextTheme === (isDark ? "dark" : "light")) return;
+                setIsDark(nextTheme === "dark");
+                document.documentElement.classList.toggle("dark", nextTheme === "dark");
+                document.documentElement.style.colorScheme = nextTheme;
+                onThemeChange?.(nextTheme);
+            };
 
-        if (typeof document.startViewTransition !== "function") {
-            applyTheme();
-            return;
-        }
+            if (typeof document.startViewTransition !== "function") {
+                applyTheme();
+                return;
+            }
 
-        const clipPath = getThemeTransitionClipPaths(shape, x, y, maxRadius, viewportWidth, viewportHeight);
+            const clipPath = getThemeTransitionClipPaths(shape, x, y, maxRadius, viewportWidth, viewportHeight);
 
-        const root = document.documentElement;
-        root.dataset.magicuiThemeVt = "active";
-        root.style.setProperty("--magicui-theme-toggle-vt-duration", `${duration}ms`);
-        // Pin the collapsed clip-path via CSS so Firefox does not paint the new
-        // theme unclipped between snapshot and the ready.then() JS animation.
-        root.style.setProperty("--magicui-theme-vt-clip-from", clipPath[0]);
-        const cleanup = () => {
-            delete root.dataset.magicuiThemeVt;
-            root.style.removeProperty("--magicui-theme-toggle-vt-duration");
-            root.style.removeProperty("--magicui-theme-vt-clip-from");
-        };
+            const root = document.documentElement;
+            root.dataset.magicuiThemeVt = "active";
+            root.style.setProperty("--magicui-theme-toggle-vt-duration", `${duration}ms`);
+            // Pin the collapsed clip-path via CSS so Firefox does not paint the new
+            // theme unclipped between snapshot and the ready.then() JS animation.
+            root.style.setProperty("--magicui-theme-vt-clip-from", clipPath[0]);
+            const cleanup = () => {
+                delete root.dataset.magicuiThemeVt;
+                root.style.removeProperty("--magicui-theme-toggle-vt-duration");
+                root.style.removeProperty("--magicui-theme-vt-clip-from");
+            };
 
-        const transition = document.startViewTransition(() => {
-            flushSync(applyTheme);
-        });
-        if (typeof transition?.finished?.finally === "function") {
-            transition.finished.finally(cleanup);
-        } else {
-            cleanup();
-        }
-
-        const ready = transition?.ready;
-        if (ready && typeof ready.then === "function") {
-            ready.then(() => {
-                document.documentElement.animate(
-                    {
-                        clipPath,
-                    },
-                    {
-                        duration,
-                        // Star: linear avoids easing overshoot that fights polygon interpolation at t→1; VT group duration is synced above.
-                        easing: shape === "star" ? "linear" : "ease-in-out",
-                        fill: "forwards",
-                        pseudoElement: "::view-transition-new(root)",
-                    },
-                );
+            const transition = document.startViewTransition(() => {
+                flushSync(applyTheme);
             });
-        }
-    }, [shape, fromCenter, duration, isDark, targetTheme, onThemeChange]);
+            if (typeof transition?.finished?.finally === "function") {
+                transition.finished.finally(cleanup);
+            } else {
+                cleanup();
+            }
+
+            const ready = transition?.ready;
+            if (ready && typeof ready.then === "function") {
+                ready.then(() => {
+                    document.documentElement.animate(
+                        {
+                            clipPath,
+                        },
+                        {
+                            duration,
+                            // Star: linear avoids easing overshoot that fights polygon interpolation at t→1; VT group duration is synced above.
+                            easing: shape === "star" ? "linear" : "ease-in-out",
+                            fill: "forwards",
+                            pseudoElement: "::view-transition-new(root)",
+                        },
+                    );
+                });
+            }
+        },
+        [shape, fromCenter, duration, isDark, targetTheme, onThemeChange],
+    );
 
     return (
-        <button type="button" ref={buttonRef} onClick={toggleTheme} className={cn(className)} {...props}>
+        <button type="button" onClick={toggleTheme} className={cn(className)} {...props}>
             {children ?? (isDark ? <Sun /> : <Moon />)}
             <span className="sr-only">{props["aria-label"] || t("theme.toggle")}</span>
         </button>
