@@ -23871,7 +23871,7 @@ var require_has_flag = __commonJS({
 var require_supports_colors = __commonJS({
   "node_modules/@colors/colors/lib/system/supports-colors.js"(exports2, module2) {
     "use strict";
-    var os4 = __require("os");
+    var os5 = __require("os");
     var hasFlag = require_has_flag();
     var env = process.env;
     var forceColor = void 0;
@@ -23909,7 +23909,7 @@ var require_supports_colors = __commonJS({
       }
       var min = forceColor ? 1 : 0;
       if (process.platform === "win32") {
-        var osRelease = os4.release().split(".");
+        var osRelease = os5.release().split(".");
         if (Number(process.versions.node.split(".")[0]) >= 8 && Number(osRelease[0]) >= 10 && Number(osRelease[2]) >= 10586) {
           return Number(osRelease[2]) >= 14931 ? 3 : 2;
         }
@@ -28993,7 +28993,7 @@ var require_winston_transport = __commonJS({
 var require_console = __commonJS({
   "node_modules/winston/lib/winston/transports/console.js"(exports2, module2) {
     "use strict";
-    var os4 = __require("os");
+    var os5 = __require("os");
     var { LEVEL, MESSAGE } = require_triple_beam();
     var TransportStream = require_winston_transport();
     module2.exports = class Console extends TransportStream {
@@ -29007,7 +29007,7 @@ var require_console = __commonJS({
         this.name = options2.name || "console";
         this.stderrLevels = this._stringArrayToSet(options2.stderrLevels);
         this.consoleWarnLevels = this._stringArrayToSet(options2.consoleWarnLevels);
-        this.eol = typeof options2.eol === "string" ? options2.eol : os4.EOL;
+        this.eol = typeof options2.eol === "string" ? options2.eol : os5.EOL;
         this.forceConsole = options2.forceConsole || false;
         this._consoleLog = console.log.bind(console);
         this._consoleWarn = console.warn.bind(console);
@@ -31808,7 +31808,7 @@ var require_file = __commonJS({
     var { Stream, PassThrough } = require_readable();
     var TransportStream = require_winston_transport();
     var debug = require_node3()("winston:file");
-    var os4 = __require("os");
+    var os5 = __require("os");
     var tailFile = require_tail_file();
     module2.exports = class File extends TransportStream {
       /**
@@ -31846,7 +31846,7 @@ var require_file = __commonJS({
         this.rotationFormat = options2.rotationFormat || false;
         this.zippedArchive = options2.zippedArchive || false;
         this.maxFiles = options2.maxFiles || null;
-        this.eol = typeof options2.eol === "string" ? options2.eol : os4.EOL;
+        this.eol = typeof options2.eol === "string" ? options2.eol : os5.EOL;
         this.tailable = options2.tailable || false;
         this.lazy = options2.lazy || false;
         this._size = 0;
@@ -32649,7 +32649,7 @@ var require_stream2 = __commonJS({
     "use strict";
     var isStream = require_is_stream();
     var { MESSAGE } = require_triple_beam();
-    var os4 = __require("os");
+    var os5 = __require("os");
     var TransportStream = require_winston_transport();
     module2.exports = class Stream extends TransportStream {
       /**
@@ -32665,7 +32665,7 @@ var require_stream2 = __commonJS({
         this._stream = options2.stream;
         this._stream.setMaxListeners(Infinity);
         this.isObjectMode = options2.stream._writableState.objectMode;
-        this.eol = typeof options2.eol === "string" ? options2.eol : os4.EOL;
+        this.eol = typeof options2.eol === "string" ? options2.eol : os5.EOL;
       }
       /**
        * Core logging method exposed to Winston.
@@ -33048,7 +33048,7 @@ var require_exception_stream = __commonJS({
 var require_exception_handler = __commonJS({
   "node_modules/winston/lib/winston/exception-handler.js"(exports2, module2) {
     "use strict";
-    var os4 = __require("os");
+    var os5 = __require("os");
     var asyncForEach = require_forEach();
     var debug = require_node3()("winston:exception");
     var once = require_one_time();
@@ -33143,8 +33143,8 @@ var require_exception_handler = __commonJS({
        */
       getOsInfo() {
         return {
-          loadavg: os4.loadavg(),
-          uptime: os4.uptime()
+          loadavg: os5.loadavg(),
+          uptime: os5.uptime()
         };
       }
       /**
@@ -33286,7 +33286,7 @@ var require_rejection_stream = __commonJS({
 var require_rejection_handler = __commonJS({
   "node_modules/winston/lib/winston/rejection-handler.js"(exports2, module2) {
     "use strict";
-    var os4 = __require("os");
+    var os5 = __require("os");
     var asyncForEach = require_forEach();
     var debug = require_node3()("winston:rejection");
     var once = require_one_time();
@@ -33383,8 +33383,8 @@ var require_rejection_handler = __commonJS({
        */
       getOsInfo() {
         return {
-          loadavg: os4.loadavg(),
-          uptime: os4.uptime()
+          loadavg: os5.loadavg(),
+          uptime: os5.uptime()
         };
       }
       /**
@@ -51991,6 +51991,7 @@ var require_dist4 = __commonJS({
 var import_express = __toESM(require_express2(), 1);
 import { spawn } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
+import os4 from "node:os";
 import path8 from "node:path";
 
 // node_modules/zod-to-json-schema/dist/esm/Options.js
@@ -59487,7 +59488,6 @@ async function listReadOnlyScope(scope, root) {
 }
 var SkillManager = class {
   repoStore;
-  userStore;
   roots;
   constructor(workspacePath) {
     const workspace = path6.resolve(workspacePath);
@@ -69992,6 +69992,18 @@ function startHttpServer() {
   });
   app.get("/config", (_req, res) => res.json({ ok: true, protocolVersion: AGENT_PROTOCOL_VERSION, url: config2.url, hasToken: true }));
   app.get("/bootstrap", (_req, res) => res.json({ ok: true, plugin: "infinite-canvas", version: VERSION, url: config2.url, token: config2.token }));
+  const harnessSettingsPath = path8.join(os4.homedir(), ".dsh", "haitang-aigc", "settings.json");
+  app.get("/harness-settings", async (_req, res) => {
+    try {
+      const raw = await readFile(harnessSettingsPath, "utf-8");
+      const parsed = JSON.parse(raw);
+      res.json({ ok: true, settings: parsed, settingsPath: harnessSettingsPath });
+    } catch (error2) {
+      const isMissing2 = error2 instanceof Error && "code" in error2 && error2.code === "ENOENT";
+      res.setHeader("Cache-Control", "no-store");
+      res.json({ ok: true, settings: null, settingsPath: harnessSettingsPath, error: isMissing2 ? "settings file not found" : String(error2) });
+    }
+  });
   registerMcpHttpEndpoint(app, (name, input) => session.callTool(name, input));
   const siteDir = process.env.CANVAS_SITE_DIR?.trim();
   if (siteDir) {
@@ -70319,6 +70331,7 @@ function setCors(req, res, url, config2) {
   const host = req.headers.host;
   if (host && origin === `${req.protocol}://${host}`) return true;
   if (url.pathname === "/bootstrap" && isLoopbackOrigin(origin)) return true;
+  if (url.pathname === "/harness-settings" && isLoopbackOrigin(origin)) return true;
   if ((url.pathname === "/store" || url.pathname.startsWith("/store/") || url.pathname.startsWith("/media/")) && isLoopbackOrigin(origin)) return true;
   config2.origins ||= [];
   if (validToken(req, url, config2.token) && !config2.origins.includes(origin)) {

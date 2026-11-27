@@ -36,7 +36,7 @@ dsh-plugin/
 ├── package.json          # npm 与 dsh.bundle.patch / dsh.client 声明
 ├── cordis.patch.yml      # 服务端入口条目 + dsh-mcp-client 条目
 ├── dsh/index.js          # 服务端入口：托管桥（复用/拉起/心跳/手动重启）+ bridge-info
-├── lib/client.js         # 客户端单文件（右侧栏标签：工具栏 + 画布 iframe）
+├── lib/client.js         # 客户端单文件（右侧栏标签：画布 iframe）
 ├── scripts/sync-assets.mjs  # 打包前同步 bridge/（canvas-agent dist-bundle）与 site/（web/dist）
 ├── bridge/               # 生成目录（gitignore）：esbuild 单文件桥运行时
 └── site/                 # 生成目录（gitignore）：web/dist 构建产物
