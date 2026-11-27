@@ -31,34 +31,34 @@ export function VersionReleaseModal({ className, style }: VersionReleaseModalPro
         <>
             <button
                 type="button"
-                className={className || "shrink-0 cursor-pointer text-xs font-medium text-stone-500 transition hover:text-stone-950 dark:text-stone-400 dark:hover:text-white"}
+                className={className || "shrink-0 cursor-pointer text-xs font-medium text-muted-foreground transition hover:text-foreground"}
                 style={style}
                 onClick={openReleaseModal}
                 title={t("version.viewUpdates")}
             >
                 <span className="relative inline-flex">
                     {APP_VERSION}
-                    {hasNewVersion ? <span className="absolute -right-1.5 -top-1 size-1.5 rounded-full bg-green-500" /> : null}
+                    {hasNewVersion ? <span className="absolute -right-1.5 -top-1 size-1.5 rounded-full bg-[var(--dsw-alias-state-success-primary)]" /> : null}
                 </span>
             </button>
             <Modal title={t("version.title")} open={open} width={680} centered footer={null} onCancel={() => setOpen(false)}>
                 <div className="mb-5 grid grid-cols-2 gap-3">
-                    <div className="rounded-lg border border-stone-200 p-3 dark:border-stone-800">
-                        <div className="text-xs text-stone-500 dark:text-stone-400">{t("version.currentVersion")}</div>
-                        <div className="mt-1 text-base font-semibold text-stone-950 dark:text-stone-100">{APP_VERSION}</div>
+                    <div className="rounded-lg border border-border p-3">
+                        <div className="text-xs text-muted-foreground">{t("version.currentVersion")}</div>
+                        <div className="mt-1 text-base font-semibold text-foreground">{APP_VERSION}</div>
                     </div>
-                    <div className="rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+                    <div className="rounded-lg border border-border p-3">
                         <div className="flex items-center justify-between gap-3">
-                            <div className="text-xs text-stone-500 dark:text-stone-400">{t("version.latestVersion")}</div>
+                            <div className="text-xs text-muted-foreground">{t("version.latestVersion")}</div>
                             <button
                                 type="button"
-                                className="cursor-pointer bg-transparent p-0 text-[11px] font-normal text-stone-400 underline-offset-2 transition hover:text-stone-700 hover:underline dark:text-stone-500 dark:hover:text-stone-300"
+                                className="cursor-pointer bg-transparent p-0 text-[11px] font-normal text-muted-foreground underline-offset-2 transition hover:text-foreground hover:underline"
                                 onClick={() => void checkLatestRelease(true)}
                             >
                                 {t(checking ? "version.checking" : "version.checkUpdates")}
                             </button>
                         </div>
-                        <div className="mt-1 text-base font-semibold text-stone-950 dark:text-stone-100">{latestVersion}</div>
+                        <div className="mt-1 text-base font-semibold text-foreground">{latestVersion}</div>
                     </div>
                 </div>
                 <div className="max-h-[56vh] overflow-y-auto pr-2">
@@ -67,8 +67,8 @@ export function VersionReleaseModal({ className, style }: VersionReleaseModalPro
                             content: (
                                 <div>
                                     <div className="flex flex-wrap items-center gap-2">
-                                        <span className="text-sm font-semibold text-stone-950 dark:text-stone-100">{release.version === "Unreleased" ? t("version.unreleased") : release.version}</span>
-                                        <span className="text-xs text-stone-500 dark:text-stone-400">{release.date}</span>
+                                        <span className="text-sm font-semibold text-foreground">{release.version === "Unreleased" ? t("version.unreleased") : release.version}</span>
+                                        <span className="text-xs text-muted-foreground">{release.date}</span>
                                         <div className="flex min-w-0 items-center gap-1.5">
                                             {release.version === latestVersion ? <Tag color="green">{t("version.latest")}</Tag> : null}
                                             {release.version === APP_VERSION ? <Tag>{t("version.current")}</Tag> : null}
@@ -76,7 +76,7 @@ export function VersionReleaseModal({ className, style }: VersionReleaseModalPro
                                     </div>
                                     <div className="mt-2 space-y-1.5">
                                         {release.items.map((item, index) => (
-                                            <div key={`${release.version}-${index}`} className="flex items-start gap-2 text-sm leading-6 text-stone-700 dark:text-stone-300">
+                                            <div key={`${release.version}-${index}`} className="flex items-start gap-2 text-sm leading-6 text-foreground">
                                                 <Tag color={getTagColor(item.type)} className="m-0 mt-0.5 shrink-0 whitespace-nowrap">
                                                     {releaseTypeLabel(item.type, t)}
                                                 </Tag>

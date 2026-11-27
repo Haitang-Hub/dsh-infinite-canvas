@@ -105,7 +105,7 @@ export function PromptGithubPickerModal({ open, onPick, onClose }: { open: boole
                                         { value: "video", label: t("config.promptSources.media.video") },
                                     ]}
                                 />
-                                <Input allowClear prefix={<Search className="size-3.5 text-stone-400" />} value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder={t("config.promptSources.github.search")} />
+                                <Input allowClear prefix={<Search className="size-3.5 text-muted-foreground" />} value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder={t("config.promptSources.github.search")} />
                                 <Button loading={loading} onClick={() => void loadRepos()} title={t("config.promptSources.github.refresh")}>
                                     {t("config.promptSources.github.refresh")}
                                 </Button>
@@ -119,18 +119,18 @@ export function PromptGithubPickerModal({ open, onPick, onClose }: { open: boole
                                             setSelectedName(repo.name);
                                             setMediaType(inferRepoMediaType(repo));
                                         }}
-                                        className={`block w-full rounded-lg border px-3 py-2 text-left transition-colors ${selectedName === repo.name ? "border-stone-900 bg-stone-100 dark:border-stone-200 dark:bg-stone-800" : "border-stone-200 hover:border-stone-400 dark:border-stone-800 dark:hover:border-stone-600"}`}
+                                        className={`block w-full rounded-lg border px-3 py-2 text-left transition-colors ${selectedName === repo.name ? "border-ring bg-accent" : "border-border hover:border-ring"}`}
                                     >
                                         <div className="flex items-center gap-2">
                                             <span className="truncate text-sm font-semibold">{repo.name}</span>
                                             {repo.stars ? (
-                                                <span className="flex shrink-0 items-center gap-0.5 text-xs text-stone-500">
+                                                <span className="flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground">
                                                     <Star className="size-3" />
                                                     {repo.stars}
                                                 </span>
                                             ) : null}
                                         </div>
-                                        <div className="mt-0.5 line-clamp-2 text-xs text-stone-500">{repo.description || repo.name}</div>
+                                        <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{repo.description || repo.name}</div>
                                         {repo.topics.length ? (
                                             <div className="mt-1 flex flex-wrap gap-1">
                                                 {repo.topics.slice(0, 4).map((topic) => (
@@ -142,7 +142,7 @@ export function PromptGithubPickerModal({ open, onPick, onClose }: { open: boole
                                 ))}
                                 {!filteredRepos.length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("config.promptSources.github.noMatch")} /> : null}
                             </div>
-                            <div className="text-xs text-stone-400">{t("config.promptSources.github.readmeHint")}</div>
+                            <div className="text-xs text-muted-foreground">{t("config.promptSources.github.readmeHint")}</div>
                         </div>
                     ) : (
                         !loading && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("config.promptSources.github.emptyHint")} />

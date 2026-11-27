@@ -178,6 +178,55 @@
 }
 
 @layer utilities {
+    /* 状态色工具类：统一引用 DSH 令牌，避免组件里再写 text-red-500 / bg-amber-50 之类的散落值 */
+    .ic-text-accent {
+        color: var(--dsw-alias-state-business-primary);
+    }
+
+    .ic-text-success {
+        color: var(--dsw-alias-state-success-primary);
+    }
+
+    .ic-text-warning {
+        color: var(--dsw-alias-state-warning-primary);
+    }
+
+    .ic-text-danger {
+        color: var(--dsw-alias-state-error-primary);
+    }
+
+    .ic-bg-accent-soft {
+        background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent);
+    }
+
+    .ic-bg-success-soft {
+        background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent);
+    }
+
+    .ic-bg-warning-soft {
+        background: color-mix(in srgb, var(--dsw-alias-state-warning-primary) 12%, transparent);
+    }
+
+    .ic-bg-danger-soft {
+        background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);
+    }
+
+    .ic-border-accent {
+        border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 36%, transparent);
+    }
+
+    .ic-border-success {
+        border-color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 34%, transparent);
+    }
+
+    .ic-border-warning {
+        border-color: color-mix(in srgb, var(--dsw-alias-state-warning-primary) 36%, transparent);
+    }
+
+    .ic-border-danger {
+        border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 34%, transparent);
+    }
+
     .ai-title-aurora {
         background: linear-gradient(
             90deg,

@@ -124,7 +124,7 @@ export function AgentLogView({
 
                 <div className="border-y py-2.5" style={{ borderColor: theme.node.stroke }}>
                     <div className="flex items-start gap-2.5">
-                        <span className={`mt-1.5 size-2 shrink-0 rounded-full ${context.connected ? "bg-emerald-500" : context.enabled ? "bg-amber-500" : "bg-current opacity-30"}`} />
+                        <span className={`mt-1.5 size-2 shrink-0 rounded-full ${context.connected ? "bg-[var(--dsw-alias-state-success-primary)]" : context.enabled ? "bg-[var(--dsw-alias-state-warning-primary)]" : "bg-current opacity-30"}`} />
                         <div className="min-w-0 flex-1">
                             <div className="flex min-w-0 items-center gap-2 text-sm">
                                 <span className="font-medium">{connectionLabel}</span>
@@ -223,11 +223,11 @@ function LogActions({ logs, lastError, context, onClear, onCopy }: { logs: Agent
 
 function LogRow({ item, theme, onToggle }: { item: DisplayLog; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onToggle?: (open: boolean) => void }) {
     const { t } = useTranslation();
-    const tone = item.level === "error" ? "text-red-600 dark:text-red-400" : item.level === "warning" ? "text-amber-600 dark:text-amber-400" : item.success ? "text-emerald-600 dark:text-emerald-400" : "";
+    const tone = item.level === "error" ? "ic-text-danger" : item.level === "warning" ? "ic-text-warning" : item.success ? "ic-text-success" : "";
     const Icon = item.level === "error" ? CircleAlert : item.level === "warning" ? TriangleAlert : item.success ? CheckCircle2 : CircleDot;
     return (
         <details className="group border-b last:border-b-0" style={{ borderColor: theme.node.stroke }} onToggle={(event) => onToggle?.(event.currentTarget.open)}>
-            <summary className="cursor-pointer list-none px-1 py-2.5 transition hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-current/20 dark:hover:bg-white/10 [&::-webkit-details-marker]:hidden">
+            <summary className="cursor-pointer list-none px-1 py-2.5 transition hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-current/20 [&::-webkit-details-marker]:hidden">
                 <div className="flex items-start gap-2.5">
                     <Icon className={`mt-0.5 size-4 shrink-0 ${tone}`} style={tone ? undefined : { color: theme.node.muted }} />
                     <div className="min-w-0 flex-1">

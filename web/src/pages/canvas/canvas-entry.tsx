@@ -42,7 +42,7 @@ export default function CanvasEntry() {
     }, [agentQuery, createProject, hydrated, lastProjectId, mode, navigate, projects, t]);
 
     return (
-        <main className="flex h-full items-center justify-center bg-background text-sm text-stone-500">
+        <main className="flex h-full items-center justify-center bg-background text-sm text-muted-foreground">
             {t("canvas.opening")}
         </main>
     );

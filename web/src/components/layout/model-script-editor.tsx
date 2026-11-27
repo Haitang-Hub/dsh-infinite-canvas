@@ -16,15 +16,15 @@ function isDarkMode() {
 function StepHeading({ index, title }: { index: number; title: string }) {
     return (
         <div className="mb-2 flex items-center gap-2">
-            <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-stone-900 text-[11px] font-medium text-white dark:bg-stone-100 dark:text-stone-900">{index}</span>
-            <span className="text-sm font-medium text-stone-800 dark:text-stone-100">{title}</span>
+            <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-medium text-primary-foreground">{index}</span>
+            <span className="text-sm font-medium text-foreground">{title}</span>
         </div>
     );
 }
 
 function StepBlock({ index, title, children }: { index: number; title: string; children: ReactNode }) {
     return (
-        <section className="border-b border-stone-200/70 px-5 py-4 dark:border-stone-800/70">
+        <section className="border-b border-border px-5 py-4">
             <StepHeading index={index} title={title} />
             {children}
         </section>
@@ -61,16 +61,16 @@ export function ModelScriptEditor({ open, capability, modelName, value, onSave, 
             style={{ top: 0, margin: 0, paddingBottom: 0, maxWidth: "100vw" }}
         >
             <div className="flex h-dvh max-h-dvh flex-col overflow-hidden">
-                <header className="shrink-0 border-b border-stone-200 px-6 py-3 pr-12 dark:border-stone-800">
+                <header className="shrink-0 border-b border-border px-6 py-3 pr-12">
                     <div className="text-base font-semibold">
                         {t("config.scriptEditor.title", { capability: capabilityLabel })}
                         {modelName ? ` · ${modelName}` : ""}
                     </div>
-                    <div className="mt-1 text-xs text-stone-500">{t("config.scriptEditor.description")}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{t("config.scriptEditor.description")}</div>
                 </header>
                 <div className="flex min-h-0 flex-1 overflow-hidden">
-                    <aside className="flex h-full w-[420px] shrink-0 flex-col border-r border-stone-200 bg-stone-50/80 dark:border-stone-800 dark:bg-stone-900/40">
-                        <div className="flex shrink-0 gap-2 border-b border-stone-200/70 px-5 py-3 text-xs text-stone-500 dark:border-stone-800/70 dark:text-stone-400">
+                    <aside className="flex h-full w-[420px] shrink-0 flex-col border-r border-border bg-muted">
+                        <div className="flex shrink-0 gap-2 border-b border-border px-5 py-3 text-xs text-muted-foreground">
                             <span>1. {t("config.scriptEditor.stepRule")}</span>
                             <span>→</span>
                             <span>2. {t("config.scriptEditor.stepAi")}</span>
@@ -79,19 +79,19 @@ export function ModelScriptEditor({ open, capability, modelName, value, onSave, 
                         </div>
                         <div className="min-h-0 flex-1 overflow-y-scroll overscroll-contain p-0">
                             <StepBlock index={1} title={t("config.scriptEditor.stepRule")}>
-                                <p className="text-xs leading-5 text-stone-600 dark:text-stone-300">{t("config.scriptEditor.stepRuleHint")}</p>
+                                <p className="text-xs leading-5 text-muted-foreground">{t("config.scriptEditor.stepRuleHint")}</p>
                                 <div className="mt-3">
-                                    <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-stone-400">{t("config.scriptEditor.returnRequirements")}</div>
-                                    <div className="text-xs leading-6 text-stone-600 dark:text-stone-300">{getPluginReturn(capability)}</div>
+                                    <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{t("config.scriptEditor.returnRequirements")}</div>
+                                    <div className="text-xs leading-6 text-muted-foreground">{getPluginReturn(capability)}</div>
                                 </div>
                             </StepBlock>
                             <StepBlock index={2} title={t("config.scriptEditor.stepAi")}>
-                                <ol className="list-decimal space-y-1.5 pl-4 text-xs leading-5 text-stone-600 dark:text-stone-300">
+                                <ol className="list-decimal space-y-1.5 pl-4 text-xs leading-5 text-muted-foreground">
                                     <li>{t("config.scriptEditor.stepAiCopy")}</li>
                                     <li>{t("config.scriptEditor.stepAiAsk")}</li>
                                     <li>{t("config.scriptEditor.stepAiPaste")}</li>
                                 </ol>
-                                <p className="mt-2 text-[11px] leading-5 text-stone-400">{t("config.scriptEditor.stepAiIncludes")}</p>
+                                <p className="mt-2 text-[11px] leading-5 text-muted-foreground">{t("config.scriptEditor.stepAiIncludes")}</p>
                                 <Button
                                     type="primary"
                                     className="mt-3"
@@ -104,11 +104,11 @@ export function ModelScriptEditor({ open, capability, modelName, value, onSave, 
                             <section className="px-5 py-4">
                                 <StepHeading index={3} title={t("config.scriptEditor.variables")} />
                                 <div className="mb-2 flex items-center justify-between">
-                                    <p className="text-xs leading-5 text-stone-500 dark:text-stone-400">
+                                    <p className="text-xs leading-5 text-muted-foreground">
                                         {t("config.scriptEditor.variablesHint")}
                                         {capability === "video" ? ` ${t("config.scriptEditor.variablesHintVideo")}` : ""}
                                     </p>
-                                    <span className="shrink-0 text-[10px] text-stone-400">{t("config.scriptEditor.insert")}</span>
+                                    <span className="shrink-0 text-[10px] text-muted-foreground">{t("config.scriptEditor.insert")}</span>
                                 </div>
                                 <div className="space-y-1.5">
                                     {variables.map((variable) => (
@@ -116,28 +116,28 @@ export function ModelScriptEditor({ open, capability, modelName, value, onSave, 
                                             key={variable.name}
                                             type="button"
                                             onClick={() => setDraft((current) => (current ? `${current}\n${variable.name}` : variable.name))}
-                                            className="group block w-full rounded-lg border border-transparent px-2.5 py-2 text-left transition-colors hover:border-stone-200 hover:bg-white dark:hover:border-stone-700 dark:hover:bg-stone-800/60"
+                                            className="group block w-full rounded-lg border border-transparent px-2.5 py-2 text-left transition-colors hover:border-border hover:bg-accent"
                                         >
                                             <div className="flex flex-wrap items-baseline gap-1.5">
-                                                <code className="rounded bg-stone-200/80 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-stone-800 group-hover:bg-blue-100 group-hover:text-blue-700 dark:bg-stone-800 dark:text-stone-100 dark:group-hover:bg-blue-950 dark:group-hover:text-blue-300">
+                                                <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-semibold text-foreground group-hover:bg-accent">
                                                     {variable.name}
                                                 </code>
-                                                <span className="font-mono text-[10px] text-stone-400">{variable.type}</span>
+                                                <span className="font-mono text-[10px] text-muted-foreground">{variable.type}</span>
                                             </div>
-                                            <div className="mt-1 text-xs leading-5 text-stone-500 dark:text-stone-400">{variable.desc}</div>
+                                            <div className="mt-1 text-xs leading-5 text-muted-foreground">{variable.desc}</div>
                                         </button>
                                     ))}
                                 </div>
                             </section>
                         </div>
                     </aside>
-                    <div className="flex h-full min-w-0 flex-1 flex-col bg-white dark:bg-stone-950">
-                        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 px-4 py-2.5 dark:border-stone-800">
+                    <div className="flex h-full min-w-0 flex-1 flex-col bg-background">
+                        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2.5">
                             <div>
-                                <div className="text-sm font-medium text-stone-800 dark:text-stone-100">{t("config.scriptEditor.editorTitle")}</div>
-                                <div className="text-xs text-stone-500">{t("config.scriptEditor.editorHint")}</div>
+                                <div className="text-sm font-medium text-foreground">{t("config.scriptEditor.editorTitle")}</div>
+                                <div className="text-xs text-muted-foreground">{t("config.scriptEditor.editorHint")}</div>
                             </div>
-                            <span className="shrink-0 text-[11px] text-stone-400">{hasScript ? t("config.scriptEditor.editorFilled") : t("config.scriptEditor.editorEmpty")}</span>
+                            <span className="shrink-0 text-[11px] text-muted-foreground">{hasScript ? t("config.scriptEditor.editorFilled") : t("config.scriptEditor.editorEmpty")}</span>
                         </div>
                         <div className="min-h-0 flex-1 overflow-hidden">
                             <CodeMirror
@@ -153,9 +153,9 @@ export function ModelScriptEditor({ open, capability, modelName, value, onSave, 
                         </div>
                     </div>
                 </div>
-                <footer className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-stone-200 px-6 py-3 dark:border-stone-800">
+                <footer className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border px-6 py-3">
                     <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-xs text-stone-400">{t("config.scriptEditor.startFromTemplate")}</span>
+                        <span className="text-xs text-muted-foreground">{t("config.scriptEditor.startFromTemplate")}</span>
                         {templates.map((template) => (
                             <Button key={template.label} size="small" onClick={() => setDraft(template.script)}>
                                 {t("config.scriptEditor.insertTemplate", { name: template.label })}

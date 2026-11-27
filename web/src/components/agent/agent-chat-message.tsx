@@ -221,9 +221,9 @@ export function AgentApprovalCard({ approval, theme, onDecision }: { approval: A
     const title = t(isNetwork ? "agent.message.networkApproval" : isFile ? "agent.message.fileApproval" : approval.method === "item/permissions/requestApproval" ? "agent.message.permissionApproval" : "agent.message.commandApproval");
     const target = isNetwork ? approvalTarget(approval.networkApprovalContext) : isFile ? approval.grantRoot || approval.cwd : commandText(approval.command) || approval.cwd;
     return (
-        <div className="min-w-0 rounded-xl border px-3 py-3" style={{ borderColor: "rgba(234,88,12,.32)", background: "rgba(234,88,12,.035)", color: theme.node.text }}>
+        <div className="min-w-0 rounded-xl border px-3 py-3" style={{ borderColor: theme.state.dangerBorder, background: theme.state.dangerFill, color: theme.node.text }}>
             <div className="flex items-start gap-2.5">
-                <ShieldAlert className="mt-0.5 size-4 shrink-0 text-orange-600" />
+                <ShieldAlert className="mt-0.5 size-4 shrink-0 text-[var(--dsw-alias-state-warning-primary)]" />
                 <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium">{title}</div>
                     {approval.reason ? <div className="mt-1 text-xs leading-5" style={{ color: theme.node.muted }}>{approval.reason}</div> : null}
@@ -233,7 +233,7 @@ export function AgentApprovalCard({ approval, theme, onDecision }: { approval: A
             <div className="mt-3 flex flex-wrap justify-end gap-1.5 border-t pt-3" style={{ borderColor: theme.node.stroke }}>
                 <Button danger type="text" className="!h-8" disabled={Boolean(approval.deciding)} loading={approval.deciding === "decline"} onClick={() => onDecision("decline")}>{t("agent.message.decline")}</Button>
                 <Button type="text" className="!h-8" disabled={Boolean(approval.deciding)} loading={approval.deciding === "accept"} onClick={() => onDecision("accept")}>{t("agent.message.allowOnce")}</Button>
-                <Button type="text" className="!h-8" disabled={Boolean(approval.deciding)} loading={approval.deciding === "acceptForSession"} style={{ color: "#ea580c" }} onClick={() => onDecision("acceptForSession")}>{t("agent.message.allowSession")}</Button>
+                <Button type="text" className="!h-8" disabled={Boolean(approval.deciding)} loading={approval.deciding === "acceptForSession"} style={{ color: theme.state.warning }} onClick={() => onDecision("acceptForSession")}>{t("agent.message.allowSession")}</Button>
             </div>
         </div>
     );
@@ -245,7 +245,7 @@ export function AgentToolCard({ title, text, detail, theme }: { title: string; t
     const kind = String(objectField(detail, "kind") || "");
     if (kind === "reasoning") return <AgentReasoningSummary text={text} detail={detail} theme={theme} />;
     if (kind === "command") return <AgentCommandGroup items={[{ id: title, text, detail }]} theme={theme} />;
-    const state = toolCardState(title, text, detail);
+    const state = toolCardState(title, text, theme, detail);
     const view = userDetail(detail);
     const showText = title !== "读取画布" || text !== "已读取当前画布内容";
     const className = "group min-w-0 rounded-xl border px-3 py-2.5 text-left";
@@ -302,7 +302,7 @@ export function AgentCommandGroup({ items, theme }: { items: AgentCommandItem[];
     const running = states.some((state) => state.running);
     const failed = states.filter((state) => state.failed).length;
     const expandable = items.some((item) => Boolean(item.text.trim() || userDetail(item.detail)));
-    const color = running ? "#d97706" : failed ? "#dc2626" : theme.node.muted;
+    const color = running ? theme.state.warning : failed ? theme.state.danger : theme.node.muted;
     const label = running ? t(items.length > 1 ? "agent.message.commandsRunning" : "agent.message.commandRunning", { count: items.length }) : t("agent.message.commandsCompleted", { count: items.length, failed: failed ? t("agent.message.commandsFailed", { count: failed }) : "" });
     const header = (
         <div className="flex min-w-0 items-center gap-2 text-sm" style={{ color }}>
@@ -340,7 +340,7 @@ function AgentCommandEntry({ item, index, theme }: { item: AgentCommandItem; ind
     const view = userDetail(item.detail);
     const state = commandViewState(item.detail);
     const status = t(state.failed ? "agent.message.failed" : state.running ? "agent.message.running" : "agent.message.completed");
-    const color = state.failed ? "#dc2626" : state.running ? "#d97706" : "#16a34a";
+    const color = state.failed ? theme.state.danger : state.running ? theme.state.warning : theme.state.success;
     const content = (
         <>
             <span className="w-4 shrink-0 text-center text-[10px] tabular-nums opacity-50" style={{ color: theme.node.muted }}>{index + 1}</span>
@@ -372,7 +372,7 @@ function commandViewState(detail: unknown) {
 function AgentPlanCard({ title, plan, theme }: { title: string; plan: PlanDetail; theme: (typeof canvasThemes)[keyof typeof canvasThemes] }) {
     const [open, setOpen] = useState(true);
     const completed = plan.tasks.filter((item) => item.status === "completed").length;
-    const state = planCardState(plan, completed);
+    const state = planCardState(plan, completed, theme);
     return (
         <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)} className="group min-w-0 flex-1 rounded-xl border px-3 py-2.5 text-left" style={{ borderColor: theme.node.stroke, background: "transparent", color: theme.node.text }}>
             <summary className="flex min-w-0 cursor-pointer list-none items-center gap-2.5">
@@ -385,7 +385,7 @@ function AgentPlanCard({ title, plan, theme }: { title: string; plan: PlanDetail
             {plan.explanation ? <div className="mt-1.5 text-xs leading-5" style={{ color: theme.node.muted }}>{plan.explanation}</div> : null}
             <div className="mt-2.5 space-y-2 border-t pt-2.5" style={{ borderColor: theme.node.stroke }}>
                 {plan.tasks.map((item, index) => {
-                    const task = planTaskState(item.status, theme.node.muted);
+                    const task = planTaskState(item.status, theme);
                     return (
                         <div key={`${index}-${item.step}`} className="flex items-start gap-2 text-sm leading-5">
                             <span className="mt-0.5 shrink-0" style={{ color: task.color }}>{task.icon}</span>
@@ -411,7 +411,7 @@ export function AgentWorkingMessage({ text, detail, status = "running", mcpStatu
     return (
         <div className="min-w-0 py-1" aria-live="polite">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm" style={{ color: theme.node.muted }}>
-                {status === "running" ? <LoaderCircle className="size-3.5 shrink-0 animate-spin" /> : status === "ready" ? <CheckCircle2 className="size-3.5 shrink-0 text-emerald-600" /> : <XCircle className="size-3.5 shrink-0 text-red-600" />}
+                {status === "running" ? <LoaderCircle className="size-3.5 shrink-0 animate-spin" /> : status === "ready" ? <CheckCircle2 className="size-3.5 shrink-0 text-[var(--dsw-alias-state-success-primary)]" /> : <XCircle className="size-3.5 shrink-0 text-[var(--dsw-alias-state-error-primary)]" />}
                 <span className="min-w-0">{text}</span>
                 {status === "running" && elapsed >= 5 ? <span className="shrink-0 text-[11px] tabular-nums opacity-60">{waitingTime(elapsed)}</span> : null}
             </div>
@@ -420,7 +420,7 @@ export function AgentWorkingMessage({ text, detail, status = "running", mcpStatu
                 <div className="ml-5.5 mt-3 space-y-2">
                     {mcpStatuses.map((item) => (
                         <div key={item.name} className="flex min-w-0 items-start gap-2 text-xs leading-5" style={{ color: theme.node.muted }}>
-                            {item.status === "running" ? <LoaderCircle className="mt-0.5 size-3.5 shrink-0 animate-spin" /> : item.status === "ready" ? <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-emerald-600" /> : <XCircle className="mt-0.5 size-3.5 shrink-0 text-red-600" />}
+                            {item.status === "running" ? <LoaderCircle className="mt-0.5 size-3.5 shrink-0 animate-spin" /> : item.status === "ready" ? <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-[var(--dsw-alias-state-success-primary)]" /> : <XCircle className="mt-0.5 size-3.5 shrink-0 text-[var(--dsw-alias-state-error-primary)]" />}
                             <div className="min-w-0">
                                 <div className="font-medium" style={{ color: theme.node.text }}>{item.name}</div>
                                 <div className="opacity-65">{item.detail}</div>
@@ -519,16 +519,16 @@ function AgentMessageAttachments({ attachments, alignRight }: { attachments: Age
     );
 }
 
-function toolCardState(title: string, text: string, detail?: unknown) {
+function toolCardState(title: string, text: string, theme: (typeof canvasThemes)[keyof typeof canvasThemes], detail?: unknown) {
     const raw = `${title} ${text} ${normalizeText(objectField(detail, "error"))}`;
     const lower = raw.toLowerCase();
     const status = String(objectField(detail, "status") || "").toLowerCase();
-    if (status === "noop" || /未生效|无需|没有找到|没有.*可|已存在/.test(raw)) return { label: tr("noEffect"), color: "#d97706", icon: <CircleAlert className="size-4" />, isError: false };
-    if (["declined", "rejected", "cancelled", "canceled"].includes(status) || /拒绝|取消/.test(raw)) return { label: tr("canceled"), color: "#dc2626", icon: <XCircle className="size-4" />, isError: true };
-    if (["failed", "error"].includes(status) || /失败|错误/.test(raw) || lower.includes("failed") || lower.includes("error")) return { label: tr("failed"), color: "#dc2626", icon: <XCircle className="size-4" />, isError: true };
-    if (["inprogress", "in_progress", "running", "started", "pending"].includes(status)) return { label: tr("running"), color: "#d97706", icon: <LoaderCircle className="size-4 animate-spin" />, isError: false };
-    if (["completed", "succeeded", "success"].includes(status) || /完成|成功/.test(raw)) return { label: tr("completed"), color: "#16a34a", icon: <CheckCircle2 className="size-4" />, isError: false };
-    return { label: tr("recorded"), color: "#2563eb", icon: <Wrench className="size-4" />, isError: false };
+    if (status === "noop" || /未生效|无需|没有找到|没有.*可|已存在/.test(raw)) return { label: tr("noEffect"), color: theme.state.warning, icon: <CircleAlert className="size-4" />, isError: false };
+    if (["declined", "rejected", "cancelled", "canceled"].includes(status) || /拒绝|取消/.test(raw)) return { label: tr("canceled"), color: theme.state.danger, icon: <XCircle className="size-4" />, isError: true };
+    if (["failed", "error"].includes(status) || /失败|错误/.test(raw) || lower.includes("failed") || lower.includes("error")) return { label: tr("failed"), color: theme.state.danger, icon: <XCircle className="size-4" />, isError: true };
+    if (["inprogress", "in_progress", "running", "started", "pending"].includes(status)) return { label: tr("running"), color: theme.state.warning, icon: <LoaderCircle className="size-4 animate-spin" />, isError: false };
+    if (["completed", "succeeded", "success"].includes(status) || /完成|成功/.test(raw)) return { label: tr("completed"), color: theme.state.success, icon: <CheckCircle2 className="size-4" />, isError: false };
+    return { label: tr("recorded"), color: theme.state.info, icon: <Wrench className="size-4" />, isError: false };
 }
 
 function toolIcon(kind: string | undefined, fallback: ReactNode) {
@@ -538,18 +538,18 @@ function toolIcon(kind: string | undefined, fallback: ReactNode) {
     return fallback;
 }
 
-function planCardState(plan: PlanDetail, completed: number) {
-    if (plan.status === "failed") return { label: tr("failed"), color: "#dc2626" };
-    if (["interrupted", "cancelled", "canceled"].includes(plan.status)) return { label: tr("stopped"), color: "#d97706" };
-    if (completed === plan.tasks.length) return { label: tr("completed"), color: "#16a34a" };
-    if (plan.status === "finished") return { label: tr("finished"), color: "#2563eb" };
-    return { label: tr("running"), color: "#d97706" };
+function planCardState(plan: PlanDetail, completed: number, theme: (typeof canvasThemes)[keyof typeof canvasThemes]) {
+    if (plan.status === "failed") return { label: tr("failed"), color: theme.state.danger };
+    if (["interrupted", "cancelled", "canceled"].includes(plan.status)) return { label: tr("stopped"), color: theme.state.warning };
+    if (completed === plan.tasks.length) return { label: tr("completed"), color: theme.state.success };
+    if (plan.status === "finished") return { label: tr("finished"), color: theme.state.info };
+    return { label: tr("running"), color: theme.state.warning };
 }
 
-function planTaskState(status: string, muted: string) {
-    if (status === "completed") return { label: tr("completed"), color: "#16a34a", icon: <CheckCircle2 className="size-3.5" /> };
-    if (status === "inProgress") return { label: tr("running"), color: "#d97706", icon: <LoaderCircle className="size-3.5 animate-spin" /> };
-    return { label: tr("pending"), color: muted, icon: <Circle className="size-3.5" /> };
+function planTaskState(status: string, theme: (typeof canvasThemes)[keyof typeof canvasThemes]) {
+    if (status === "completed") return { label: tr("completed"), color: theme.state.success, icon: <CheckCircle2 className="size-3.5" /> };
+    if (status === "inProgress") return { label: tr("running"), color: theme.state.warning, icon: <LoaderCircle className="size-3.5 animate-spin" /> };
+    return { label: tr("pending"), color: theme.node.muted, icon: <Circle className="size-3.5" /> };
 }
 
 function planDetail(value: unknown): PlanDetail | null {

@@ -110,7 +110,7 @@ export function CanvasPluginManagerModal({ open, onClose }: { open: boolean; onC
     const withUpgradeDot = (icon: ReactNode) => (
         <span className="relative inline-flex">
             {icon}
-            <span className="absolute -right-1 -top-1 size-2 rounded-full" style={{ background: "#22c55e", boxShadow: `0 0 0 2px ${theme.node.fill}` }} title={t("canvas.plugins.newVersion")} />
+            <span className="absolute -right-1 -top-1 size-2 rounded-full" style={{ background: theme.state.success, boxShadow: `0 0 0 2px ${theme.node.fill}` }} title={t("canvas.plugins.newVersion")} />
         </span>
     );
 
@@ -216,8 +216,8 @@ export function CanvasPluginManagerModal({ open, onClose }: { open: boolean; onC
     return (
         <Modal title={t("canvas.plugins.title")} open={open} onCancel={onClose} footer={null} centered width={640}>
             <div className="space-y-3">
-                <div className="flex items-start gap-2 rounded-lg border px-3 py-2 text-xs leading-5" style={{ borderColor: "#f59e0b55", background: "#f59e0b14", color: theme.node.text }}>
-                    <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-500" />
+                <div className="flex items-start gap-2 rounded-lg border px-3 py-2 text-xs leading-5" style={{ borderColor: theme.state.warningBorder, background: theme.state.warningFill, color: theme.node.text }}>
+                    <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--dsw-alias-state-warning-primary)]" />
                     <span>{t("canvas.plugins.warning")}</span>
                 </div>
                 <Tabs defaultActiveKey="official" items={tabs} />

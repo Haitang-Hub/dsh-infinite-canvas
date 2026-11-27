@@ -36,8 +36,8 @@ export function PromptSelectDialog({ open, onOpenChange, onSelect }: { open: boo
     return (
         <Modal title={t("prompts.library")} open={open} onCancel={() => onOpenChange(false)} footer={null} width={880} centered>
             <div className="grid h-[62dvh] min-h-0 gap-5 sm:grid-cols-[200px_minmax(0,1fr)]" data-canvas-no-zoom onWheelCapture={(event) => event.stopPropagation()}>
-                <aside className="thin-scrollbar min-h-0 overflow-y-auto border-r border-stone-200 pr-4 dark:border-stone-800">
-                    <div className="mb-2 text-xs font-semibold uppercase tracking-widest text-stone-400 dark:text-stone-500">{t("prompts.category")}</div>
+                <aside className="thin-scrollbar min-h-0 overflow-y-auto border-r border-border pr-4">
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t("prompts.category")}</div>
                     <div className="flex flex-wrap gap-1.5">
                         {promptCategories.map((category) => (
                             <Tag.CheckableTag key={category} checked={selectedCategory === category} className={cn("prompt-filter-tag", selectedCategory === category && "is-active")} onChange={() => setSelectedCategory(category)}>
@@ -45,7 +45,7 @@ export function PromptSelectDialog({ open, onOpenChange, onSelect }: { open: boo
                             </Tag.CheckableTag>
                         ))}
                     </div>
-                    <div className="mb-2 mt-5 text-xs font-semibold uppercase tracking-widest text-stone-400 dark:text-stone-500">{t("prompts.tags")}</div>
+                    <div className="mb-2 mt-5 text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t("prompts.tags")}</div>
                     <div className="flex flex-wrap gap-1.5">
                         {promptTags.map((tag) => {
                             const active = tag === ALL_PROMPTS_OPTION ? selectedTags.length === 0 : selectedTags.includes(tag);
@@ -58,7 +58,7 @@ export function PromptSelectDialog({ open, onOpenChange, onSelect }: { open: boo
                     </div>
                 </aside>
                 <section className="flex min-h-0 min-w-0 flex-col">
-                    <Input size="large" prefix={<Search className="size-4 text-stone-400" />} value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder={t("prompts.searchTitle")} />
+                    <Input size="large" prefix={<Search className="size-4 text-muted-foreground" />} value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder={t("prompts.searchTitle")} />
                     <div className="thin-scrollbar mt-4 min-h-0 flex-1 overflow-y-auto pr-2" data-canvas-no-zoom onScroll={handleListScroll} onWheelCapture={(event) => event.stopPropagation()}>
                         {query.isLoading ? (
                             <div className="flex h-40 items-center justify-center">

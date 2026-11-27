@@ -100,11 +100,11 @@ export function CanvasProjectDirectory({ open, onClose, currentProjectId }: Prop
         <Modal title={t("canvas.directory.title")} open={open} onCancel={onClose} footer={null} centered width={560}>
             <div className="flex flex-col gap-3">
                 <div className="flex items-center gap-2">
-                    <Input size="small" allowClear prefix={<Search className="size-3.5 text-stone-400" />} placeholder={t("canvas.directory.search")} value={keyword} onChange={(event) => setKeyword(event.target.value)} />
+                    <Input size="small" allowClear prefix={<Search className="size-3.5 text-muted-foreground" />} placeholder={t("canvas.directory.search")} value={keyword} onChange={(event) => setKeyword(event.target.value)} />
                     <button
                         type="button"
                         onClick={createAndOpen}
-                        className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold transition hover:bg-black/5 dark:hover:bg-white/10"
+                        className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold transition hover:bg-accent"
                         style={{ color: theme.toolbar.activeText }}
                     >
                         <Plus className="size-3.5" />
@@ -113,7 +113,7 @@ export function CanvasProjectDirectory({ open, onClose, currentProjectId }: Prop
                     <button
                         type="button"
                         onClick={() => importInputRef.current?.click()}
-                        className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold opacity-70 transition hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"
+                        className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold opacity-70 transition hover:bg-accent hover:opacity-100"
                         style={{ color: theme.node.text }}
                     >
                         <FileUp className="size-3.5" />
@@ -144,14 +144,14 @@ export function CanvasProjectDirectory({ open, onClose, currentProjectId }: Prop
                                         <span className="hidden shrink-0 text-xs opacity-45 sm:block">{dayjs(project.updatedAt).format("MM-DD HH:mm")}</span>
                                         <span className="shrink-0 text-xs opacity-45" title={t("canvas.directory.nodeCount")}>{project.nodes.length}</span>
                                         <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
-                                            <button type="button" onClick={() => startRename(project)} className="grid size-6 place-items-center rounded-md opacity-60 transition hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10" aria-label={t("canvas.renameHint")} title={t("canvas.renameHint")}>
+                                            <button type="button" onClick={() => startRename(project)} className="grid size-6 place-items-center rounded-md opacity-60 transition hover:bg-[var(--dsw-alias-interactive-bg-active)] hover:opacity-100" aria-label={t("canvas.renameHint")} title={t("canvas.renameHint")}>
                                                 <Pencil className="size-3.5" />
                                             </button>
-                                            <button type="button" onClick={() => void exportProject(project)} className="grid size-6 place-items-center rounded-md opacity-60 transition hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10" aria-label={t("canvas.exportCurrent")} title={t("canvas.exportCurrent")}>
+                                            <button type="button" onClick={() => void exportProject(project)} className="grid size-6 place-items-center rounded-md opacity-60 transition hover:bg-[var(--dsw-alias-interactive-bg-active)] hover:opacity-100" aria-label={t("canvas.exportCurrent")} title={t("canvas.exportCurrent")}>
                                                 <Download className="size-3.5" />
                                             </button>
                                             <Popconfirm title={t("canvas.directory.deleteTitle", { name: project.title })} okText={t("common.delete")} cancelText={t("common.cancel")} okButtonProps={{ danger: true }} onConfirm={() => deleteProject(project)}>
-                                                <button type="button" className="grid size-6 place-items-center rounded-md opacity-60 transition hover:bg-black/10 hover:text-red-500 hover:opacity-100 dark:hover:bg-white/10" aria-label={t("canvas.deleteCurrent")} title={t("canvas.deleteCurrent")}>
+                                                <button type="button" className="grid size-6 place-items-center rounded-md opacity-60 transition hover:bg-[var(--dsw-alias-interactive-bg-active)] hover:text-destructive hover:opacity-100" aria-label={t("canvas.deleteCurrent")} title={t("canvas.deleteCurrent")}>
                                                     <Trash2 className="size-3.5" />
                                                 </button>
                                             </Popconfirm>

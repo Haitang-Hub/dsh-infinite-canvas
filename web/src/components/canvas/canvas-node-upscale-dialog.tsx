@@ -72,7 +72,7 @@ export function CanvasNodeUpscaleDialog({ dataUrl, open, onClose, onConfirm }: {
                                 options={targetOptions.map((option) => ({ label: `${option.label} · ${option.value}px`, value: option.value, disabled: Boolean(image && sourceLongEdge >= option.value) }))}
                                 onChange={(value) => setParams((current) => ({ ...current, targetLongEdge: Number(value) }))}
                             />
-                            {image && !canUpscale ? <div className="text-xs font-medium text-[#ef4444]">{reachedMax ? t("canvas.editors.maxReached") : t("canvas.editors.targetReached")}</div> : null}
+                            {image && !canUpscale ? <div className="text-xs font-medium text-[var(--dsw-alias-state-error-primary)]">{reachedMax ? t("canvas.editors.maxReached") : t("canvas.editors.targetReached")}</div> : null}
                         </div>
                         <div className="space-y-2">
                             <div className="font-medium opacity-75">{t("canvas.editors.algorithm")}</div>

@@ -92,7 +92,7 @@ export function ModelSelectModal({ open, channel, selectedNames, onConfirm, onCl
             onCancel={onClose}
             title={
                 <span>
-                    {t("config.modelSelect.title")} <span className="ml-2 text-xs font-normal text-stone-500">{t("config.modelSelect.selected", { selected: selected.size, total: new Set([...existing, ...fetched]).size })}</span>
+                    {t("config.modelSelect.title")} <span className="ml-2 text-xs font-normal text-muted-foreground">{t("config.modelSelect.selected", { selected: selected.size, total: new Set([...existing, ...fetched]).size })}</span>
                 </span>
             }
             styles={{ body: { maxHeight: "62vh", overflowY: "auto" } }}
@@ -106,14 +106,14 @@ export function ModelSelectModal({ open, channel, selectedNames, onConfirm, onCl
             ]}
         >
             <div className="flex flex-wrap items-center gap-3">
-                <Input className="min-w-[200px] flex-1" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("config.modelSelect.search")} prefix={<Search className="size-4 text-stone-400" />} allowClear />
+                <Input className="min-w-[200px] flex-1" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("config.modelSelect.search")} prefix={<Search className="size-4 text-muted-foreground" />} allowClear />
                 <Input className="min-w-[180px] flex-1" value={manual} onChange={(event) => setManual(event.target.value)} onPressEnter={addManual} placeholder={t("config.modelSelect.modelName")} />
                 <Button onClick={addManual}>{t("config.modelSelect.add")}</Button>
                 <Button icon={<RefreshCw className="size-4" />} loading={loading} onClick={() => void fetchModels()}>
                     {t("config.modelSelect.fetch")}
                 </Button>
             </div>
-            <div className="mt-2 text-xs text-stone-500">{t("config.modelSelect.description")}</div>
+            <div className="mt-2 text-xs text-muted-foreground">{t("config.modelSelect.description")}</div>
 
             <Tabs
                 className="mt-3"
@@ -126,7 +126,7 @@ export function ModelSelectModal({ open, channel, selectedNames, onConfirm, onCl
             />
 
             <div className="mb-3 flex items-center justify-between gap-2">
-                <span className="text-xs text-stone-500">{t("config.modelSelect.visibleSelected", { selected: visibleSelectedCount, total: visibleList.length })}</span>
+                <span className="text-xs text-muted-foreground">{t("config.modelSelect.visibleSelected", { selected: visibleSelectedCount, total: visibleList.length })}</span>
                 <div className="flex gap-2">
                     <Button size="small" disabled={!visibleList.length} onClick={() => selectVisible(true)}>
                         {t("config.modelSelect.selectVisible")}
@@ -148,7 +148,7 @@ export function ModelSelectModal({ open, channel, selectedNames, onConfirm, onCl
                     ))}
                 </div>
             ) : (
-                <div className="py-8 text-center text-sm text-stone-500">{t(activeTab === "new" ? "config.modelSelect.fetchedEmpty" : "config.modelSelect.existingEmpty")}</div>
+                <div className="py-8 text-center text-sm text-muted-foreground">{t(activeTab === "new" ? "config.modelSelect.fetchedEmpty" : "config.modelSelect.existingEmpty")}</div>
             )}
         </Modal>
     );

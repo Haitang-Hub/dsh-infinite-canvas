@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v0.2.39 - 2026-11-27
+
++ [重构] 画布主题系统（第二阶段）：design-tokens 继续接入剩余 29 个组件（Agent 对话 composer/message/log-view、asset-picker 弹窗、image/audio/text/video 等各类型 settings popover、canvas-plugin-manager / canvas-project-directory、app-config-modal / channel-editor-drawer / config-prompt-sources / model-select-modal / version-release-modal 等布局组件、prompt-card / prompt-select-dialog 等 prompts 组件）；globals.css 新增一组令牌变量。
+
 ## v0.2.38 - 2026-11-27
 
 + [重构] 画布主题系统：新增 design-tokens.ts（语义化设计令牌），app-theme / canvas-theme / globals.css 三文件联动重写，主题色、间距、圆角、阴影统一由令牌驱动；画布节点、顶栏、工具栏、侧栏、缩放控件等 16 处组件同步接入令牌。

@@ -4,7 +4,9 @@ import { Button, Input, Modal, Slider, Tooltip } from "antd";
 import { Brush, Eraser, ImagePlus, Redo2, RotateCcw, Undo2, WandSparkles, ZoomIn, ZoomOut } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { canvasThemes } from "@/lib/canvas-theme";
 import { readImageMeta } from "@/lib/image-utils";
+import { useThemeStore } from "@/stores/use-theme-store";
 import { useImageEditorViewport } from "@/components/canvas/use-image-editor-viewport";
 
 export type CanvasImageMaskEditPayload = {
@@ -19,8 +21,12 @@ type MaskStroke = { mode: DrawMode; size: number; points: Point[] };
 type BrushPreview = { x: number; y: number; size: number; adjusting: boolean };
 
 const defaultBrushSize = 100;
-const maskOverlayColor = "#2563eb";
 const maskOverlayAlpha = 0.4;
+
+/** 蒙版着色的蓝色取当前主题的 accent：canvas 2D 不解析 CSS 变量，须每次绘制时取实际色值。 */
+function maskOverlayColor() {
+    return canvasThemes[useThemeStore.getState().theme].state.accent;
+}
 
 export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: { dataUrl: string; open: boolean; onClose: () => void; onConfirm: (payload: CanvasImageMaskEditPayload) => void }) {
     const { t } = useTranslation();
@@ -253,7 +259,7 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
                 {brushPreview
                     ? createPortal(
                           <div
-                              className={`pointer-events-none fixed z-[1100] rounded-full border-2 ${brushPreview.adjusting ? "border-[#fbbf24] bg-black/10" : "border-white/90 bg-black/5"} shadow-[0_0_0_1px_rgba(0,0,0,.8)]`}
+                              className={`pointer-events-none fixed z-[1100] rounded-full border-2 ${brushPreview.adjusting ? "border-[var(--dsw-alias-state-warning-primary)] bg-black/10" : "border-white/90 bg-black/5"} shadow-[0_0_0_1px_rgba(0,0,0,.8)]`}
                               style={{ left: brushPreview.x, top: brushPreview.y, width: Math.max(4, brushPreview.size * viewport.imageScale), aspectRatio: 1, transform: "translate(-50%, -50%)" }}
                           >
                               {brushPreview.adjusting ? <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded bg-black/75 px-1.5 py-0.5 text-xs font-semibold text-white">{brushSize}px</span> : null}
@@ -318,7 +324,7 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
                                 setError("");
                             }}
                         />
-                        {error ? <div className="text-xs font-medium text-[#ef4444]">{error}</div> : null}
+                        {error ? <div className="text-xs font-medium text-[var(--dsw-alias-state-error-primary)]">{error}</div> : null}
                     </div>
 
                     <div className="mt-auto flex items-center justify-between gap-2">
@@ -385,8 +391,8 @@ function configurePreviewStrokeContext(context: CanvasRenderingContext2D, stroke
     context.lineJoin = "round";
     context.lineWidth = stroke.size;
     context.globalCompositeOperation = stroke.mode === "paint" ? "source-over" : "destination-out";
-    context.strokeStyle = maskOverlayColor;
-    context.fillStyle = maskOverlayColor;
+    context.strokeStyle = maskOverlayColor();
+    context.fillStyle = maskOverlayColor();
 }
 
 function replayMask(strokes: MaskStroke[], maskCanvas: HTMLCanvasElement | null, previewCanvas: HTMLCanvasElement | null) {
@@ -430,7 +436,7 @@ function buildMaskOverlay(image: HTMLImageElement, selectionCanvas: HTMLCanvasEl
     if (!overlayContext) return canvas.toDataURL("image/png");
     overlayContext.drawImage(selectionCanvas, 0, 0);
     overlayContext.globalCompositeOperation = "source-in";
-    overlayContext.fillStyle = maskOverlayColor;
+    overlayContext.fillStyle = maskOverlayColor();
     overlayContext.fillRect(0, 0, overlay.width, overlay.height);
     context.globalAlpha = maskOverlayAlpha;
     context.drawImage(overlay, 0, 0);
